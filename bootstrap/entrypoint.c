@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#include <ctype.h>
 #include <stdarg.h>
 #include <errno.h>
 
@@ -94,7 +93,7 @@ int main(const int argc, const char *const *argv)
         const char   *arg = argv[index];
         unsigned long len = strlen(arg);
 
-        if (isalnum(arg[0]))
+        if (arg[0] != '-')
         {
             // We don't have an option (must be input file)
             if (opts.input_path != NULL)
@@ -235,12 +234,39 @@ int main(const int argc, const char *const *argv)
     }
 
     struct token_stream stream;
-    enum token_error    result = tokenize_file(&stream, input_file);
+    int                 result = tokenize_file(&stream, input_file);
     switch (result)
     {
-    case E_INVALID_IDENTIFIER:
+    case E_INVALID_ESCAPE_SEQUENCE:
     case E_MEMORYERROR:
     case E_IOERROR: fclose(input_file); return -1;
+    }
+
+    printf("%lu Tokens;\n", stream.size);
+    for (int i = 0; i < stream.size; i++)
+    {
+        struct token token = stream.tokens[i];
+        printf("\t");
+        switch (token.value)
+        {
+        case E_TOKEN_INTEGER: printf("Integer: %lu\n", token.data.integer); continue;
+        case E_TOKEN_STRING: printf("String: %s\n", token.data.string); continue;
+        case E_TOKEN_IDENTIFIER: printf("Ident: %s\n", token.data.string); continue;
+        case E_TOKEN_AS: printf("as\n"); continue;
+        case E_TOKEN_ENUM: printf("enum\n"); continue;
+        case E_TOKEN_CONST: printf("const\n"); continue;
+        case E_TOKEN_EXTERN: printf("extern\n"); continue;
+        case E_TOKEN_FUNCTION: printf("fn\n"); continue;
+        case E_TOKEN_IF: printf("if\n"); continue;
+        case E_TOKEN_IMPLEMENTS: printf("impl\n"); continue;
+        case E_TOKEN_LET: printf("let\n"); continue;
+        case E_TOKEN_MATCH: printf("match\n"); continue;
+        case E_TOKEN_PUBLIC: printf("pub\n"); continue;
+        case E_TOKEN_STRUCT: printf("struct\n"); continue;
+        case E_TOKEN_TRAIT: printf("trait\n"); continue;
+        }
+
+        printf("%c\n", token.value);
     }
 
     fclose(input_file);
