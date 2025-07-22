@@ -46,47 +46,28 @@ int tokenize_file(struct token_stream *tokens, FILE *file)
     memset(token_buffer, 0, TOKENBUFFER_SIZE);
     size_t buffer_len = 0;
 
-    int line   = 1;
-    int column = 0;
+    struct debug_info debug_info = {
+        .line   = 1,
+        .column = 0,
+    };
 
     char c;
     while ((c = fgetc(file)) != EOF)
     {
-        column += 1;
+        debug_info.column += 1;
         if (c == '\n')
         {
-            line += 1;
-            column = 0;
+            debug_info.line += 1;
+            debug_info.column = 0;
         }
+
+        // TODO: Support (ignore) Comments
 
         if (buffer_len > 0)
         {
             // Continue along adding to token_buffer
             if (tokens->tokens[tokens->size].value == E_TOKEN_STRING)
             {
-                if (buffer_len >= 1 && token_buffer[buffer_len - 1] == '\\')
-                {
-                    // Escaped Chars
-
-                    // TODO: Support unicode escape sequences
-                    // TODO: Support hex escape sequences
-                    switch (c)
-                    {
-                    case 'n': token_buffer[buffer_len - 1] = '\n'; continue;
-                    case 'r': token_buffer[buffer_len - 1] = '\r'; continue;
-                    case 't': token_buffer[buffer_len - 1] = '\t'; continue;
-
-                    case '\\':
-                    case '"':
-                    case '\'': token_buffer[buffer_len - 1] = c; continue;
-                    }
-
-                    glc_log(E_ERROR, "Invalid Escape at %d:%d\n", line, column);
-                    free(token_buffer);
-                    token_stream_free(tokens);
-                    return E_INVALID_ESCAPE_SEQUENCE;
-                }
-
                 if (c == '"')
                 {
                     if (buffer_len >= 1 && token_buffer[buffer_len - 1] == '\\')
@@ -124,12 +105,13 @@ int tokenize_file(struct token_stream *tokens, FILE *file)
                     unsigned long value      = strtoul(token_buffer, &last_value, 10);
                     if (value == ULONG_MAX && errno == ERANGE)
                     {
+                        struct debug_info info = tokens->tokens[tokens->size++].debug_info;
                         glc_log(
                           E_WARN,
                           "Value %s at %d:%d is too long; Clamped to %lu\n",
                           token_buffer,
-                          line,
-                          column - buffer_len,
+                          info.line,
+                          info.column,
                           ULONG_MAX);
                     }
                     tokens->tokens[tokens->size++].data.integer = value;
@@ -145,7 +127,7 @@ int tokenize_file(struct token_stream *tokens, FILE *file)
             }
             else
             {
-                if (!isalnum(c))
+                if (!(isalnum(c) || c == '_'))
                 {
                     // Finish current token
 
@@ -223,6 +205,8 @@ int tokenize_file(struct token_stream *tokens, FILE *file)
             if (result < 0) { return result; }
         }
 
+        tokens->tokens[tokens->size].debug_info = debug_info;
+
         // Start new token
         if (isdigit(c))
         {
@@ -246,7 +230,8 @@ int tokenize_file(struct token_stream *tokens, FILE *file)
         if (isspace(c)) { continue; }
 
         // Unknown token
-        tokens->tokens[tokens->size++].value = c;
+        tokens->tokens[tokens->size].value = c;
+        tokens->size++;
     }
     free(token_buffer);
 

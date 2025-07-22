@@ -1,6 +1,12 @@
 #pragma once
 #include <stdio.h>
 
+struct debug_info
+{
+    int line;
+    int column;
+};
+
 struct token
 {
     enum
@@ -32,6 +38,8 @@ struct token
         unsigned long integer;
         const char   *string;
     } data;
+
+    struct debug_info debug_info;
 };
 
 struct token_stream
@@ -44,8 +52,7 @@ struct token_stream
 
 enum token_error
 {
-    E_INVALID_ESCAPE_SEQUENCE = -3,
-    E_MEMORYERROR,
+    E_MEMORYERROR = -2,
     E_IOERROR,
 };
 

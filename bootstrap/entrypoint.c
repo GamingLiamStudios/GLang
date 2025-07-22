@@ -237,7 +237,6 @@ int main(const int argc, const char *const *argv)
     int                 result = tokenize_file(&stream, input_file);
     switch (result)
     {
-    case E_INVALID_ESCAPE_SEQUENCE:
     case E_MEMORYERROR:
     case E_IOERROR: fclose(input_file); return -1;
     }
