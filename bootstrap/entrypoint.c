@@ -3,39 +3,23 @@
 #include <stdlib.h>
 #include <ctype.h>
 #include <stdarg.h>
+#include <errno.h>
 
 #include "log.h"
 #include "ansi.h"
-
-struct InputFilePath
-{
-    const char           *path;
-    struct InputFilePath *next;
-};
-
-unsigned long inputfiles_len(struct InputFilePath *restrict list)
-{
-    unsigned long count = 0;
-    while (list != NULL)
-    {
-        count++;
-        list = list->next;
-    }
-
-    return count;
-}
+#include "token.h"
 
 struct CompilerOpts
 {
-    struct InputFilePath *input_files;
-    const char           *output_path;
-    int                   verbosity;
+    const char *input_path;
+    const char *output_path;
+    int         verbosity;
 };
 
 struct CompilerOpts opts = {
     .verbosity   = E_INFO,
     .output_path = NULL,
-    .input_files = NULL,
+    .input_path  = NULL,
 };
 
 void glc_log(enum LogLevel level, const char *restrict format, ...)
@@ -90,7 +74,7 @@ void glc_log(enum LogLevel level, const char *restrict format, ...)
 
 void help()
 {
-    fprintf(stdout, "USAGE: glc [options] -o OUTPUT_FILE input...\n");
+    fprintf(stdout, "USAGE: glc [options] -o OUTPUT_FILE input_file\n");
 }
 
 int main(const int argc, const char *const *argv)
@@ -113,12 +97,12 @@ int main(const int argc, const char *const *argv)
         if (isalnum(arg[0]))
         {
             // We don't have an option (must be input file)
-            // man i miss vectors...
-            struct InputFilePath *current = malloc(sizeof(struct InputFilePath));
-            current->path                 = arg;
-            current->next                 = opts.input_files;
-
-            opts.input_files = current;
+            if (opts.input_path != NULL)
+            {
+                glc_log(E_ERROR, "Input File already specified (%s)\n", opts.input_path);
+                return -1;
+            }
+            opts.input_path = arg;
             continue;
         }
 
@@ -222,7 +206,7 @@ int main(const int argc, const char *const *argv)
         return -1;
     }
 
-    if (opts.input_files == NULL)
+    if (opts.input_path == NULL)
     {
         glc_log(E_ERROR, "Missing Input!\n");
         help();
@@ -230,13 +214,34 @@ int main(const int argc, const char *const *argv)
     }
 
     glc_log(E_DEBUG, "Verbosity: %d\n", opts.verbosity);
-    glc_log(E_INFO, "Output Path: %s\n", opts.output_path);
-    glc_log(E_DEBUG, "Input Files (%d);\n", inputfiles_len(opts.input_files));
+    glc_log(E_DEBUG, "Output Path: %s\n", opts.output_path);
+    glc_log(E_DEBUG, "Input Path: %s\n", opts.input_path);
 
-    struct InputFilePath *path = opts.input_files;
-    while (path != NULL)
+    // Compilation pipeline;
+    // Tokenization; Convert input file into stream of tokens
+    // Parsing; Parse stream of tokens into Abstract Syntax Tree
+    // Compile; Generate LLVM IR from AST
+
+    // First step in compiling; Tokenization
+    FILE *input_file = fopen(opts.input_path, "r");
+    if (input_file == NULL)
     {
-        glc_log(E_DEBUG, "\t%s\n", path->path);
-        path = path->next;
+        glc_log(
+          E_ERROR,
+          "Error reading Input File (\"%s\"); %s\n",
+          opts.input_path,
+          strerror(errno));
+        return errno;
     }
+
+    struct token_stream stream;
+    enum token_error    result = tokenize_file(&stream, input_file);
+    switch (result)
+    {
+    case E_INVALID_IDENTIFIER:
+    case E_MEMORYERROR:
+    case E_IOERROR: fclose(input_file); return -1;
+    }
+
+    fclose(input_file);
 }

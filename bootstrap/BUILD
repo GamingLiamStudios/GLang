@@ -7,6 +7,8 @@ cc_binary(
         "ansi.h",
         "entrypoint.c",
         "log.h",
+        "token.c",
+        "token.h",
     ],
     copts = ["-std=c11"],
 )
