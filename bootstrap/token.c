@@ -46,7 +46,7 @@ int tokenize_file(struct token_stream *tokens, FILE *file)
     memset(token_buffer, 0, TOKENBUFFER_SIZE);
     size_t buffer_len = 0;
 
-    int line   = 0;
+    int line   = 1;
     int column = 0;
 
     char c;
@@ -72,13 +72,13 @@ int tokenize_file(struct token_stream *tokens, FILE *file)
                     // TODO: Support hex escape sequences
                     switch (c)
                     {
-                    case 'n': token_buffer[buffer_len - 1] = '\n'; break;
-                    case 'r': token_buffer[buffer_len - 1] = '\r'; break;
-                    case 't': token_buffer[buffer_len - 1] = '\t'; break;
+                    case 'n': token_buffer[buffer_len - 1] = '\n'; continue;
+                    case 'r': token_buffer[buffer_len - 1] = '\r'; continue;
+                    case 't': token_buffer[buffer_len - 1] = '\t'; continue;
 
                     case '\\':
                     case '"':
-                    case '\'': token_buffer[buffer_len - 1] = c; break;
+                    case '\'': token_buffer[buffer_len - 1] = c; continue;
                     }
 
                     glc_log(E_ERROR, "Invalid Escape at %d:%d\n", line, column);
