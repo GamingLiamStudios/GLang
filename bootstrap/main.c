@@ -2,16 +2,67 @@
 #include <string.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <stdarg.h>
+
+enum LogLevel
+{
+    E_DEBUG,
+    E_INFO,
+    E_WARN,
+    E_ERROR,
+};
+
+void glc_log(enum LogLevel level, const char *restrict format, ...)
+{
+    va_list args;
+    va_start(args, format);
+
+    switch (level)
+    {
+    case E_DEBUG:
+    {
+        fprintf(stdout, "[DEBUG] ");
+        break;
+    }
+    case E_INFO:
+    {
+        fprintf(stdout, "[INFO] ");
+        break;
+    }
+    case E_WARN:
+    {
+        fprintf(stdout, "[WARN] ");
+        break;
+    }
+    case E_ERROR:
+    {
+        fprintf(stderr, "[ERROR] ");
+        vfprintf(stderr, format, args);
+        va_end(args);
+        return;
+    }
+    }
+
+    vfprintf(stdout, format, args);
+
+    va_end(args);
+}
 
 void help()
 {
-    printf("GLang Compiler!\n");
+    fprintf(stdout, "USAGE: glc [options] -o OUTPUT_FILE input...\n");
 }
 
 void version()
 {
     printf("GLang Compiler - Bootstrapper\nVersion: 0.1.0\n");
 }
+
+struct CompilerOpts
+{
+    int         verbosity;
+    const char *output_path;
+};
 
 int main(const int argc, const char *const *argv)
 {
@@ -22,6 +73,11 @@ int main(const int argc, const char *const *argv)
         help();
         return 0;
     }
+
+    struct CompilerOpts opts = {
+        .verbosity   = 0,
+        .output_path = NULL,
+    };
 
     // Parse pre-options
     int index = 0;
@@ -39,22 +95,39 @@ int main(const int argc, const char *const *argv)
         if (strncmp(opt, "--", 2))
         {
             // Short Option
-            char *opt2 = opt + 1;
-            printf("Short: %s\n", opt2 + 1);
+            unsigned long cursor = 1;
 
-            switch (opt[1])
+            while (cursor < len)
             {
-            case 'v':
-            {
-                version();
-                return 0;
-            }
-            case 'h':
-            default:
-            {
-                help();
-                return 0;
-            }
+                switch (opt[cursor++])
+                {
+                case 'v':
+                {
+                    opts.verbosity++;
+                    continue;
+                }
+                case 'o':
+                {
+                    if (cursor != len || index == argc)
+                    {
+                        printf("Invalid usage!\n");
+                        help();
+                        return -1;
+                    }
+                    else
+                    {
+                        // Read next argv
+                        opts.output_path = argv[++index];
+                        break;
+                    }
+                }
+                case 'h':
+                default:
+                {
+                    help();
+                    return 0;
+                }
+                }
             }
         }
         else
@@ -66,4 +139,14 @@ int main(const int argc, const char *const *argv)
             return 0;
         }
     }
+
+    if (opts.output_path == NULL)
+    {
+        glc_log(E_ERROR, "Missing Output!\n");
+        help();
+        return -1;
+    }
+
+    glc_log(E_DEBUG, "Verbosity: %d\n", opts.verbosity);
+    glc_log(E_DEBUG, "Output Path: %s\n", opts.output_path);
 }
