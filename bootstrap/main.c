@@ -110,7 +110,7 @@ int main(const int argc, const char *const *argv)
                 {
                     if (cursor != len || index == argc)
                     {
-                        printf("Invalid usage!\n");
+                        glc_log(E_ERROR, "Invalid usage of -o\n");
                         help();
                         return -1;
                     }
@@ -121,8 +121,9 @@ int main(const int argc, const char *const *argv)
                         break;
                     }
                 }
+
+                default: glc_log(E_ERROR, "Unknown Option: -%c\n", opt[cursor - 1]);
                 case 'h':
-                default:
                 {
                     help();
                     return 0;
