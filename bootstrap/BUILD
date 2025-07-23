@@ -9,6 +9,8 @@ cc_binary(
         "log.h",
         "token.c",
         "token.h",
+        "tree.c",
+        "tree.h",
     ],
     copts = ["-std=c11"],
 )

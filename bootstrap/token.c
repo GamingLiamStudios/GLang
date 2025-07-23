@@ -176,6 +176,10 @@ int tokenize_file(struct token_stream *tokens, FILE *file)
                     {
                         tokens->tokens[tokens->size++].value = E_TOKEN_IF;
                     }
+                    else if (strncmp(token_buffer, "else", buffer_len) == 0)
+                    {
+                        tokens->tokens[tokens->size++].value = E_TOKEN_ELSE;
+                    }
                     else if (strncmp(token_buffer, "match", buffer_len) == 0)
                     {
                         tokens->tokens[tokens->size++].value = E_TOKEN_MATCH;
@@ -233,7 +237,25 @@ int tokenize_file(struct token_stream *tokens, FILE *file)
         tokens->tokens[tokens->size].value = c;
         tokens->size++;
     }
+
+    if (buffer_len != 0)
+    {
+        glc_log(
+          E_WARN,
+          "EOF found at %d:%d; %s still in parsing buffer\n",
+          debug_info.line,
+          debug_info.column,
+          token_buffer);
+    }
+
     free(token_buffer);
 
+    if (tokens->capacity == tokens->size)
+    {
+        int result = token_stream_expand(tokens);
+        if (result < 0) { return result; }
+    }
+
+    tokens->tokens[tokens->size++].value = E_TOKEN_EOF;
     return 0;
 }

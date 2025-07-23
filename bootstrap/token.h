@@ -11,7 +11,9 @@ struct token
 {
     enum
     {
-        E_TOKEN_INTEGER = -15,
+        E_TOKEN_EOF = -255,
+
+        E_TOKEN_INTEGER,
         E_TOKEN_STRING,
         E_TOKEN_IDENTIFIER,
 
@@ -30,6 +32,7 @@ struct token
         E_TOKEN_AS,     // as
 
         E_TOKEN_IF,       // if
+        E_TOKEN_ELSE,     // else
         E_TOKEN_MATCH,    // match
     } value;              // For unknown ASCII chars; will be value of char
 
@@ -52,7 +55,7 @@ struct token_stream
 
 enum token_error
 {
-    E_MEMORYERROR = -2,
+    E_MEMORYERROR = -255,
     E_IOERROR,
 };
 

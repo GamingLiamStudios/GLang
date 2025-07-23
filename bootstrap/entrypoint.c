@@ -242,9 +242,10 @@ int main(const int argc, const char *const *argv)
     }
 
     printf("%lu Tokens;\n", stream.size);
-    for (int i = 0; i < stream.size; i++)
+    struct token *cursor = stream.tokens;
+    struct token  token;
+    while ((token = *(cursor++)).value != E_TOKEN_EOF)
     {
-        struct token token = stream.tokens[i];
         printf("\t");
         switch (token.value)
         {
@@ -263,6 +264,7 @@ int main(const int argc, const char *const *argv)
         case E_TOKEN_PUBLIC: printf("pub\n"); continue;
         case E_TOKEN_STRUCT: printf("struct\n"); continue;
         case E_TOKEN_TRAIT: printf("trait\n"); continue;
+        case E_TOKEN_EOF: break;
         }
 
         printf("%c\n", token.value);
