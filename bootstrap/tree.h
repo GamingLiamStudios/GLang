@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stddef.h>
+#include "token.h"
 
 enum ast_typedef
 {
@@ -91,6 +92,12 @@ struct ast_node
         struct ast_expr_constant constant;
         struct ast_identifier    identifier;
 
+        struct
+        {
+            struct ast_identifier identifier;
+            struct ast_node      *value;
+        } assign;
+
         struct ast_node *unary;
         struct
         {
@@ -132,8 +139,8 @@ struct ast_node
         struct
         {
             struct ast_node *condition;
-            struct ast_node *if_true;
-            struct ast_node *if_false;
+            struct ast_node *if_true;     // Can be NULL
+            struct ast_node *if_false;    // Can be NULL
         } branch;
 
         struct
@@ -143,3 +150,14 @@ struct ast_node
         } loop;
     } value;
 };
+
+struct ast_list
+{
+    struct ast_node *nodes;
+    size_t           num_nodes;
+    size_t           capacity;
+};
+
+void ast_list_free(struct ast_list *nodes);
+
+int ast_parse_tokens(struct ast_list *nodes, struct token_stream *tokens);
