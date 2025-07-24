@@ -3,161 +3,179 @@
 #include <stddef.h>
 #include "token.h"
 
-enum ast_typedef
+enum ast_operation
 {
-    E_AST_TYPEDEF_INFERRED = -1,
+    // Arithmatic
+    E_AST_OP_ADD,    // +
+    E_AST_OP_SUB,    // -
+    E_AST_OP_MUL,    // *
+    E_AST_OP_DIV,    // /
 
-    E_AST_TYPEDEF_UNSIGNED8,
-    E_AST_TYPEDEF_UNSIGNED16,
-    E_AST_TYPEDEF_UNSIGNED32,
-    E_AST_TYPEDEF_UNSIGNED64,
+    // Binary Bitwise
+    E_AST_OP_AND,    // &
+    E_AST_OP_OR,     // |
+    E_AST_OP_XOR,    // ^
 
-    E_AST_TYPEDEF_SIGNED8,
-    E_AST_TYPEDEF_SIGNED16,
-    E_AST_TYPEDEF_SIGNED32,
-    E_AST_TYPEDEF_SIGNED64,
+    // Comparisons
+    E_AST_OP_LT,     // <
+    E_AST_OP_LE,     // <=
+    E_AST_OP_EQ,     // ==
+    E_AST_OP_NEQ,    // !=
+    E_AST_OP_GE,     // >=
+    E_AST_OP_GT,     // >
 
-    E_AST_TYPEDEF_PTR,
-    E_AST_TYPEDEF_PTRLEN,
-    E_AST_TYPEDEF_PTRDIFF,
+    // Unary; Value in cond.lhs
+    E_AST_OP_NEGATE,    // -
+    E_AST_OP_DEREF,     // *
+    E_AST_OP_BORROW,    // &
+                        // TODO: Unwrap '?'
 
-    E_AST_TYPEDEF_FLOAT32,
-    E_AST_TYPEDEF_FLOAT64,
-
-    // Advanced Data Structures
-    E_AST_TYPEDEF_STRUCT,
-    E_AST_TYPEDEF_ENUM,
-    E_AST_TYPEDEF_ARRAY,
-    E_AST_TYPEDEF_FUNCTION,
+    // Unary Bitwise
+    E_AST_OP_NOT,       // !
+    E_AST_OP_INVERT,    // ~
 };
 
-// Every Ident has an associated Type
-struct ast_identifier
+struct ast_type
 {
-    const char      *name;
-    enum ast_typedef type;
+    const char *type_name;
+    // TODO: Generics
 };
 
-struct ast_expr_constant
+struct ast_expression
 {
     enum
     {
-        E_AST_EXPR_CONSTANT_STRING,
-        E_AST_EXPR_CONSTANT_INTEGER,
-        E_AST_EXPR_CONSTANT_DECIMAL,
+        E_AST_EXPR_BLOCK,
+        E_AST_EXPR_SCOPE,
+
+        E_AST_EXPR_CALL,
+        E_AST_EXPR_LOOP,
+
+        E_AST_EXPR_LET,
+        E_AST_EXPR_CAST,
+
+        E_AST_EXPR_UNARY,
+        E_AST_EXPR_BINARY,
+
+        E_AST_EXPR_IF,
+        E_AST_EXPR_WHILE,
     } type;
 
     union
     {
-        const char *string;
-        long        integer;
+        // Used by; Block
         struct
         {
-            long          integer;
-            unsigned long fractional;
-        } decimal;
+            struct ast_statement *statements;
+            size_t                num_statements;
+
+            struct ast_expression *expression;    // NULL if void
+        } block;
+
+        // Used by; Scope, Loop
+        struct ast_expression *expr;
+
+        // Used by; Call
+        struct
+        {
+            // Includes function as expressions[0]
+            struct ast_expression **expressions;
+            size_t                  num_expressions;
+        } call;
+
+        // Used by; Let
+        struct
+        {
+            const char      *ident;
+            struct ast_type *type;
+
+            struct ast_expression *expression;
+        } let;
+
+        // Used by; Cast
+        struct
+        {
+            struct ast_expression *expression;
+            struct ast_type       *target;
+        } cast;
+
+        // Used by; Unary, Binary
+        struct
+        {
+            enum ast_operation     op;
+            struct ast_expression *lhs;
+            struct ast_expression *rhs;
+        } oper;
+
+        // Used by; If, While
+        struct
+        {
+            struct ast_expression *condition;
+
+            struct ast_expression *if_true;
+            struct ast_expression *if_false;
+        } branch;
     } value;
+};
+
+struct ast_statement
+{
+    enum
+    {
+        E_AST_STMT_EXPR,
+        E_AST_STMT_RETURN,
+        E_AST_STMT_BREAK,
+
+        E_AST_STMT_CONTINUE,
+    } type;
+
+    // Why union when (most) types use expr? future proofing ig
+    union
+    {
+        struct ast_expression *expr;    // NULL if void
+    } data;
 };
 
 struct ast_node
 {
     enum
     {
-        E_AST_FUNCTIONDEF,
-        E_AST_ASSIGN,
-
-        E_AST_CONSTANT,
-        E_AST_IDENTIFIER,
-        E_AST_FUNCTIONCALL,
-
-        // Unary Operator
-        E_AST_INVERT,
-
-        // Binary Operator
-        E_AST_ADD,
-        E_AST_SUB,
-        E_AST_MUL,
-        E_AST_DIV,
-
-        E_AST_AND,
-        E_AST_OR,
-
-        E_AST_BRANCH,
-        E_AST_LOOP,
-        E_AST_COND,
+        E_AST_NODE_FUNCTION,
+        E_AST_NODE_EXTERNAL,
+        E_AST_NODE_CONSTANT,
     } type;
+
+    const char     *ident;
+    struct ast_type node_type;
 
     union
     {
-        struct ast_expr_constant constant;
-        struct ast_identifier    identifier;
-
+        // Used by; Function, External
         struct
         {
-            struct ast_identifier identifier;
-            struct ast_node      *value;
-        } assign;
+            const char     **param_idents;
+            struct ast_type *param_types;
+            size_t           num_params;
 
-        struct ast_node *unary;
-        struct
-        {
-            struct ast_node *lhs;
-            struct ast_node *rhs;
-        } binary;
+            struct ast_expression *body;    // NULL if external
+        } function;
 
-        struct
-        {
-            struct ast_identifier identifier;
-            struct ast_node      *arguments;
-            size_t                num_arguments;
-        } function_call;
-
-        struct
-        {
-            struct ast_identifier *parameters;
-            size_t                 num_parameters;
-
-            struct ast_node *body_nodes;
-            size_t           num_body_nodes;
-        } function_def;
-
-        struct
-        {
-            enum
-            {
-                E_AST_COND_LESS,
-                E_AST_COND_LESSEQ,
-                E_AST_COND_EQ,
-                E_AST_COND_GREATEQ,
-                E_AST_COND_GREAT,
-            } type;
-
-            struct ast_node *lhs;
-            struct ast_node *rhs;
-        } cond;
-
-        struct
-        {
-            struct ast_node *condition;
-            struct ast_node *if_true;     // Can be NULL
-            struct ast_node *if_false;    // Can be NULL
-        } branch;
-
-        struct
-        {
-            struct ast_node *condition;
-            struct ast_node *exec;
-        } loop;
-    } value;
+        // Used by; Constant
+        struct ast_expression *value;
+    } data;
 };
 
-struct ast_list
+struct ast_program
 {
     struct ast_node *nodes;
     size_t           num_nodes;
-    size_t           capacity;
+    size_t           node_capacity;
 };
 
-void ast_list_free(struct ast_list *nodes);
+void ast_program_free(struct ast_program *program);
+void ast_node_free(struct ast_node *node);
+void ast_statement_free(struct ast_statement *statement);
+void ast_expression_free(struct ast_expression *expression);
+void ast_type_free(struct ast_type *type);
 
-int ast_parse_tokens(struct ast_list *nodes, struct token_stream *tokens);
+int ast_program_from_tokens(struct ast_program *program, struct token_stream *token_stream);

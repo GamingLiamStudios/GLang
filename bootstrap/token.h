@@ -34,7 +34,12 @@ struct token
         E_TOKEN_IF,       // if
         E_TOKEN_ELSE,     // else
         E_TOKEN_MATCH,    // match
-    } value;              // For unknown ASCII chars; will be value of char
+
+        E_TOKEN_WHILE,       // while
+        E_TOKEN_LOOP,        // loop
+        E_TOKEN_BREAK,       // break
+        E_TOKEN_CONTINUE,    // continue
+    } value;                 // For unknown ASCII chars; will be value of char
 
     union
     {

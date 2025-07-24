@@ -132,6 +132,7 @@ int tokenize_file(struct token_stream *tokens, FILE *file)
                     // Finish current token
 
                     // Check against keywords
+                    // ...hashmap maybe?
                     if (strncmp(token_buffer, "pub", buffer_len) == 0)
                     {
                         tokens->tokens[tokens->size++].value = E_TOKEN_PUBLIC;
@@ -183,6 +184,22 @@ int tokenize_file(struct token_stream *tokens, FILE *file)
                     else if (strncmp(token_buffer, "match", buffer_len) == 0)
                     {
                         tokens->tokens[tokens->size++].value = E_TOKEN_MATCH;
+                    }
+                    else if (strncmp(token_buffer, "while", buffer_len) == 0)
+                    {
+                        tokens->tokens[tokens->size++].value = E_TOKEN_WHILE;
+                    }
+                    else if (strncmp(token_buffer, "loop", buffer_len) == 0)
+                    {
+                        tokens->tokens[tokens->size++].value = E_TOKEN_LOOP;
+                    }
+                    else if (strncmp(token_buffer, "break", buffer_len) == 0)
+                    {
+                        tokens->tokens[tokens->size++].value = E_TOKEN_BREAK;
+                    }
+                    else if (strncmp(token_buffer, "continue", buffer_len) == 0)
+                    {
+                        tokens->tokens[tokens->size++].value = E_TOKEN_CONTINUE;
                     }
                     else
                     {
