@@ -14,6 +14,19 @@
 
 void token_stream_free(struct token_stream *tokens)
 {
+    if (tokens->tokens == NULL) { return; }
+    for (size_t i = 0; i < tokens->size; i++)
+    {
+        struct token token = tokens->tokens[i];
+        switch (token.value)
+        {
+        case E_TOKEN_IDENTIFIER:
+        case E_TOKEN_STRING: free((char *) token.data.string);
+
+        default: continue;
+        }
+    }
+
     free(tokens->tokens);
 
     tokens->capacity = 0;
@@ -79,7 +92,7 @@ int tokenize_file(struct token_stream *tokens, FILE *file)
                     {
                         // Finish current token
 
-                        char *string = malloc(buffer_len);
+                        char *string = calloc(buffer_len + 1, sizeof(char));
                         memcpy(string, token_buffer + 1, buffer_len);
 
                         tokens->tokens[tokens->size++].data.string = string;
@@ -203,7 +216,7 @@ int tokenize_file(struct token_stream *tokens, FILE *file)
                     }
                     else
                     {
-                        char *string = malloc(buffer_len + 1);
+                        char *string = calloc(buffer_len + 1, sizeof(char));
                         memcpy(string, token_buffer, buffer_len + 1);
 
                         tokens->tokens[tokens->size++].data.string = string;

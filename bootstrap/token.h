@@ -11,7 +11,7 @@ struct token
 {
     enum
     {
-        E_TOKEN_EOF = -255,
+        E_TOKEN_EOF = -127,
 
         E_TOKEN_INTEGER,
         E_TOKEN_STRING,

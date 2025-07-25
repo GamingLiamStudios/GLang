@@ -24,7 +24,7 @@ enum ast_operation
     E_AST_OP_GE,     // >=
     E_AST_OP_GT,     // >
 
-    // Unary; Value in cond.lhs
+    // Unary
     E_AST_OP_NEGATE,    // -
     E_AST_OP_DEREF,     // *
     E_AST_OP_BORROW,    // &
@@ -45,6 +45,9 @@ struct ast_expression
 {
     enum
     {
+        E_AST_EXPR_CONSTANT = -127,
+        E_AST_EXPR_VARIABLE,
+
         E_AST_EXPR_BLOCK,
         E_AST_EXPR_SCOPE,
 
@@ -61,8 +64,37 @@ struct ast_expression
         E_AST_EXPR_WHILE,
     } type;
 
+    // TODO: Debug info
+
     union
     {
+        // Used by; Variable
+        const char *variable_ident;
+
+        // Used by; Constant
+        struct
+        {
+            enum
+            {
+                E_AST_CONST_STRING,
+                E_AST_CONST_INTEGER,
+                E_AST_CONST_FLOATING,
+            } type;
+
+            union
+            {
+                // Sign is handled by negate operation
+                unsigned long integer;
+                const char   *string;
+
+                struct
+                {
+                    signed long   integer;
+                    unsigned long fractional;
+                } floating;
+            } value;
+        } constant;
+
         // Used by; Block
         struct
         {
@@ -161,7 +193,7 @@ struct ast_node
         } function;
 
         // Used by; Constant
-        struct ast_expression *value;
+        struct ast_expression value;
     } data;
 };
 
@@ -177,5 +209,11 @@ void ast_node_free(struct ast_node *node);
 void ast_statement_free(struct ast_statement *statement);
 void ast_expression_free(struct ast_expression *expression);
 void ast_type_free(struct ast_type *type);
+
+enum ast_program_create_error
+{
+    E_AST_MEMORYERROR = -255,
+    E_AST_UNEXPECTED,
+};
 
 int ast_program_from_tokens(struct ast_program *program, struct token_stream *token_stream);

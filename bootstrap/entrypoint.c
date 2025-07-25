@@ -7,6 +7,7 @@
 #include "log.h"
 #include "ansi.h"
 #include "token.h"
+#include "tree.h"
 
 struct CompilerOpts
 {
@@ -264,11 +265,57 @@ int main(const int argc, const char *const *argv)
         case E_TOKEN_PUBLIC: printf("pub\n"); continue;
         case E_TOKEN_STRUCT: printf("struct\n"); continue;
         case E_TOKEN_TRAIT: printf("trait\n"); continue;
+        case E_TOKEN_CONTINUE: printf("continue\n"); continue;
+        case E_TOKEN_BREAK: printf("break\n"); continue;
+        case E_TOKEN_ELSE: printf("else\n"); continue;
+        case E_TOKEN_LOOP: printf("loop\n"); continue;
+        case E_TOKEN_WHILE: printf("while\n"); continue;
         case E_TOKEN_EOF: break;
         }
 
         printf("%c\n", token.value);
     }
 
+    printf("Attempting to parse...\n");
+
+    struct ast_program program;
+    result = ast_program_from_tokens(&program, &stream);
+    switch (result)
+    {
+    case E_AST_UNEXPECTED:
+    case E_AST_MEMORYERROR:
+        token_stream_free(&stream);
+        fclose(input_file);
+        return -1;
+    }
+
+    printf("%lu Nodes;\n", program.num_nodes);
+    for (size_t i = 0; i < program.num_nodes; i++)
+    {
+        struct ast_node *node = program.nodes + i;
+        switch (node->type)
+        {
+        case E_AST_NODE_EXTERNAL:
+        case E_AST_NODE_FUNCTION:
+            // TODO:
+            printf("uhh..... not debuggable yet?\n");
+            break;
+
+        case E_AST_NODE_CONSTANT:
+        {
+            printf(
+              "Const(ident=\"%s\", type=\"%s\", value=%d",
+              node->ident,
+              node->node_type.type_name,
+              node->data.value.type);
+
+            printf(")\n");
+            break;
+        }
+        }
+    }
+
+    ast_program_free(&program);
+    token_stream_free(&stream);
     fclose(input_file);
 }
