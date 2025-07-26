@@ -77,6 +77,98 @@ void help()
     fprintf(stdout, "USAGE: glc [options] -o OUTPUT_FILE input_file\n");
 }
 
+void ast_statement_debug(FILE *restrict file, struct ast_statement *restrict expr)
+{
+    // TODO
+}
+
+void ast_expression_debug(FILE *restrict file, struct ast_expression *restrict expr)
+{
+    if (expr == NULL)
+    {
+        fprintf(file, "void");
+        return;
+    }
+
+    switch (expr->type)
+    {
+    case E_AST_EXPR_CONSTANT:
+    {
+        fprintf(file, "Const(");
+        switch (expr->value.constant.type)
+        {
+        case E_AST_CONST_INTEGER: fprintf(file, "%lu)", expr->value.constant.value.integer); break;
+        case E_AST_CONST_STRING: fprintf(file, "\"%s\")", expr->value.constant.value.string); break;
+        case E_AST_CONST_FLOATING:
+            fprintf(
+              file,
+              "%lu.%lu)",
+              expr->value.constant.value.floating.integer,
+              expr->value.constant.value.floating.fractional);
+            break;
+        }
+        break;
+    }
+    case E_AST_EXPR_VARIABLE: fprintf(file, "Var(name=\"%s\")", expr->value.variable_ident); break;
+    case E_AST_EXPR_BLOCK:
+    {
+        fprintf(file, "Block[");
+        for (size_t i = 0; i < expr->value.block.num_statements; i++)
+        {
+            ast_statement_debug(file, expr->value.block.statements + i);
+            fprintf(file, ", ");
+        }
+
+        ast_expression_debug(file, expr->value.block.expression);
+        fprintf(file, "]");
+        break;
+    }
+    case E_AST_EXPR_SCOPE: ast_expression_debug(file, expr->value.expr); break;
+    case E_AST_EXPR_OPER:
+    {
+        switch (expr->value.oper.op)
+        {
+        case E_AST_OP_INVERT: fprintf(file, "Invert("); break;
+        case E_AST_OP_SUB: fprintf(file, "Sub("); break;
+        case E_AST_OP_UNWRAP: fprintf(file, "Unwrap("); break;
+        case E_AST_OP_NEGATE: fprintf(file, "Negate("); break;
+        case E_AST_OP_ADD: fprintf(file, "Add("); break;
+        case E_AST_OP_AND: fprintf(file, "BinaryAND("); break;
+        case E_AST_OP_BORROW: fprintf(file, "Borrow("); break;
+        case E_AST_OP_DEREF: fprintf(file, "Deref("); break;
+        case E_AST_OP_DIV: fprintf(file, "Divide("); break;
+        case E_AST_OP_EQ: fprintf(file, "Equal("); break;
+        case E_AST_OP_GE: fprintf(file, "GreaterEqual("); break;
+        case E_AST_OP_GT: fprintf(file, "GreaterThan("); break;
+        case E_AST_OP_LE: fprintf(file, "LessEqual("); break;
+        case E_AST_OP_LT: fprintf(file, "LessThan("); break;
+        case E_AST_OP_MUL: fprintf(file, "Mul("); break;
+        case E_AST_OP_NEQ: fprintf(file, "NotEqual("); break;
+        case E_AST_OP_OR: fprintf(file, "BinaryOR("); break;
+        case E_AST_OP_XOR: fprintf(file, "BinaryXOR("); break;
+        }
+
+        if (expr->value.oper.lhs != NULL)
+        {
+            ast_expression_debug(file, expr->value.oper.lhs);
+            if (expr->value.oper.rhs != NULL) { fprintf(file, ", "); }
+        }
+
+        if (expr->value.oper.rhs != NULL) ast_expression_debug(file, expr->value.oper.rhs);
+
+        fprintf(file, ")");
+        break;
+    }
+
+    case E_AST_EXPR_CALL: fprintf(file, "Call(TODO)"); break;      // TODO
+    case E_AST_EXPR_CAST: fprintf(file, "Cast(TODO)"); break;      // TODO
+    case E_AST_EXPR_IF: fprintf(file, "If(TODO)"); break;          // TODO
+    case E_AST_EXPR_LET: fprintf(file, "Let(TODO)"); break;        // TODO
+    case E_AST_EXPR_LOOP: fprintf(file, "Loop(TODO)"); break;      // TODO
+    case E_AST_EXPR_WHILE: fprintf(file, "While(TODO)"); break;    // TODO
+    }
+}
+
 int main(const int argc, const char *const *argv)
 {
     // Quick and dirty CLI
@@ -242,7 +334,8 @@ int main(const int argc, const char *const *argv)
     case E_IOERROR: fclose(input_file); return -1;
     }
 
-    printf("%lu Tokens;\n", stream.size);
+    printf("%lu Tokens\n", stream.size);
+    /*
     struct token *cursor = stream.tokens;
     struct token  token;
     while ((token = *(cursor++)).value != E_TOKEN_EOF)
@@ -275,8 +368,7 @@ int main(const int argc, const char *const *argv)
 
         printf("%c\n", token.value);
     }
-
-    printf("Attempting to parse...\n");
+        */
 
     struct ast_program program = {
         .node_capacity = 0,
@@ -293,7 +385,7 @@ int main(const int argc, const char *const *argv)
         return -1;
     }
 
-    printf("%lu Nodes;\n", program.num_nodes);
+    printf("%lu Nodes\n", program.num_nodes);
     for (size_t i = 0; i < program.num_nodes; i++)
     {
         struct ast_node *node = program.nodes + i;
@@ -301,17 +393,18 @@ int main(const int argc, const char *const *argv)
         {
         case E_AST_NODE_EXTERNAL:
         case E_AST_NODE_FUNCTION:
-            // TODO:
+            // TODO: Debug Functions
             printf("uhh..... not debuggable yet?\n");
             break;
 
         case E_AST_NODE_CONSTANT:
         {
-            printf(
-              "Const(ident=\"%s\", type=\"%s\", value=%d",
+            fprintf(
+              stdout,
+              "Const(ident=\"%s\", type=\"%s\", value=",
               node->ident,
-              node->node_type.type_name,
-              node->data.value.type);
+              node->node_type.type_name);
+            ast_expression_debug(stdout, &node->data.value);
 
             printf(")\n");
             break;

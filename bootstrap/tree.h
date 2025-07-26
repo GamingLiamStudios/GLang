@@ -28,10 +28,9 @@ enum ast_operation
     E_AST_OP_NEGATE,    // -
     E_AST_OP_DEREF,     // *
     E_AST_OP_BORROW,    // &
-                        // TODO: Unwrap '?'
+    E_AST_OP_UNWRAP,    // ?
 
     // Unary Bitwise
-    E_AST_OP_NOT,       // !
     E_AST_OP_INVERT,    // ~
 };
 
@@ -57,8 +56,7 @@ struct ast_expression
         E_AST_EXPR_LET,
         E_AST_EXPR_CAST,
 
-        E_AST_EXPR_UNARY,
-        E_AST_EXPR_BINARY,
+        E_AST_EXPR_OPER,
 
         E_AST_EXPR_IF,
         E_AST_EXPR_WHILE,
@@ -131,7 +129,7 @@ struct ast_expression
             struct ast_type        target;
         } cast;
 
-        // Used by; Unary, Binary
+        // Used by; Operation
         struct
         {
             enum ast_operation     op;
@@ -214,6 +212,8 @@ enum ast_program_create_error
 {
     E_AST_MEMORYERROR = -255,
     E_AST_UNEXPECTED,
+    E_AST_INVALIDINPUT,
+    E_AST_DELIM,
 };
 
 int ast_program_from_tokens(struct ast_program *program, struct token_stream *token_stream);

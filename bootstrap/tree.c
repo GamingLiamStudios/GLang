@@ -30,6 +30,7 @@
 // Constant ::= "const" IDENTIFIER ":" TYPE "=" Expression ";"
 // TODO: Struct Syntax
 // TODO: Enum Syntax
+// TODO: Generic Syntax
 
 // ExprStmt ::= Expression ";"
 // RetStmt ::= "return" Expression? ";"
@@ -48,9 +49,15 @@
 // WhileExpr ::= "while" Expression BlockExpr
 // CastExpr ::= Expression as TYPE
 // TODO: Match Syntax
+// TODO: Lambda Syntax
 
 #define PROGRAM_NODECAPACITY 256
 #define PROGRAM_NODEGROWTH   2
+
+int ast_expression_from_tokens(
+  struct ast_expression *parsed,
+  struct ast_expression *previous,
+  struct token         **token_stream);
 
 void ast_program_free(struct ast_program *program)
 {
@@ -168,8 +175,7 @@ void ast_expression_free(struct ast_expression *expression)
         ast_type_free(&expression->value.cast.target);
         break;
 
-    case E_AST_EXPR_UNARY:
-    case E_AST_EXPR_BINARY:
+    case E_AST_EXPR_OPER:
         ast_expression_free(expression->value.oper.lhs);
         free(expression->value.oper.lhs);
         expression->value.oper.lhs = NULL;
@@ -248,6 +254,84 @@ enum ast_expression_result
     E_AST_POP,
 };
 
+int ast_expression_from_tokens_delim(
+  struct ast_expression *parsed,
+  struct token         **token_stream,
+  int                    delim)
+{
+    if (parsed == NULL) { return E_AST_INVALIDINPUT; }
+
+    int result = ast_expression_from_tokens(parsed, NULL, token_stream);
+    if (result < 0) { return result; }
+
+    while ((*token_stream)->value != delim)
+    {
+        struct token *prev_cursor = *token_stream;
+
+        struct ast_expression next_expr;
+        int                   result = ast_expression_from_tokens(&next_expr, parsed, token_stream);
+        if (result < 0)
+        {
+            ast_expression_free(parsed);
+            return result;
+        }
+
+        switch ((enum ast_expression_result) result)
+        {
+        case E_AST_POP: memcpy(parsed, &next_expr, sizeof(struct ast_expression)); break;
+        case E_AST_PUSH:
+            glc_log(
+              E_ERROR,
+              "Unexpected Expression at position %d:%d\n",
+              prev_cursor->debug_info.line,
+              prev_cursor->debug_info.column);
+
+            ast_expression_free(parsed);
+            ast_expression_free(&next_expr);
+            return E_AST_UNEXPECTED;
+        }
+    }
+
+    (*token_stream)++;
+    return 0;
+}
+
+int ast_expression_from_tokens_multi(struct ast_expression *parsed, struct token **token_stream)
+{
+    if (parsed == NULL) { return E_AST_INVALIDINPUT; }
+
+    int result = ast_expression_from_tokens(parsed, NULL, token_stream);
+    if (result < 0) { return result; }
+
+    while ((*token_stream)->value != E_TOKEN_EOF)
+    {
+        struct token *tmp_cursor = *token_stream;
+
+        struct ast_expression next_expr;
+        int                   result = ast_expression_from_tokens(&next_expr, parsed, &tmp_cursor);
+        if (result < 0)
+        {
+            if (result == E_AST_DELIM) { return 0; }
+
+            ast_expression_free(parsed);
+            return result;
+        }
+
+        switch ((enum ast_expression_result) result)
+        {
+        case E_AST_POP:
+            memcpy(parsed, &next_expr, sizeof(struct ast_expression));
+            *token_stream = tmp_cursor;
+            break;
+        // Technically doubles up work; but hey it (should) work
+        case E_AST_PUSH: ast_expression_free(&next_expr); return 0;
+        }
+    }
+
+    glc_log(E_ERROR, "Unexpected EOF\n");
+    return E_AST_UNEXPECTED;
+}
+
 // Returns `enum ast_expression_result`, or Negative value on error
 int ast_expression_from_tokens(
   struct ast_expression *parsed,
@@ -256,12 +340,20 @@ int ast_expression_from_tokens(
 {
     int error;
 
+    // TODO: Operator precidence parsing
+
     if (token_stream == NULL || *token_stream == NULL) { return -1; }
     if (parsed == NULL) { return -1; }
 
     struct token next = *((*token_stream)++);
-    switch (next.value)
+    switch ((int) next.value)
     {
+    // FIXME: kinda hacky bypass for multi
+    case '}':
+    case ')':
+    case ';':
+    case ',': return E_AST_DELIM;
+
     case E_TOKEN_EOF: glc_log(E_ERROR, "Unexpected EOF\n"); return E_AST_UNEXPECTED;
     case E_TOKEN_CONST:
     case E_TOKEN_FUNCTION:
@@ -553,53 +645,28 @@ int ast_expression_from_tokens(
 
     case '{':
     {
-        // TODO
+        // TODO: Block Statements
         return E_AST_PUSH;
     }
 
     case '(':
     {
-        struct ast_expression expr;
-        int                   result = ast_expression_from_tokens(&expr, NULL, token_stream);
-        if (result < 0)
+        if (previous == NULL)
         {
-            ast_expression_free(&expr);
-            return result;
+            // Scope
+            struct ast_expression expr;
+            int result = ast_expression_from_tokens_delim(&expr, token_stream, ')');
+            if (result < 0) { return result; }
+
+            parsed->type       = E_AST_EXPR_SCOPE;
+            parsed->value.expr = calloc(sizeof(struct ast_expression), 1);
+            memcpy(parsed->value.expr, &expr, sizeof(struct ast_expression));
+
+            return E_AST_PUSH;
         }
 
-        while ((*token_stream)->value != ')')
-        {
-            struct token *prev_cursor = *token_stream;
-
-            struct ast_expression next_expr;
-            int result = ast_expression_from_tokens(&next_expr, &expr, token_stream);
-            if (result < 0)
-            {
-                ast_expression_free(&expr);
-                return result;
-            }
-
-            switch ((enum ast_expression_result) result)
-            {
-            case E_AST_POP: memcpy(&expr, &next_expr, sizeof(struct ast_expression)); break;
-            case E_AST_PUSH:
-                glc_log(
-                  E_ERROR,
-                  "Unexpected Expression at position %d:%d\n",
-                  prev_cursor->debug_info.line,
-                  prev_cursor->debug_info.column);
-
-                ast_expression_free(&expr);
-                ast_expression_free(&next_expr);
-                return E_AST_UNEXPECTED;
-            }
-        }
-
-        parsed->type       = E_AST_EXPR_SCOPE;
-        parsed->value.expr = calloc(sizeof(struct ast_expression), 1);
-        memcpy(parsed->value.expr, &expr, sizeof(struct ast_expression));
-
-        return E_AST_PUSH;
+        // TODO: Function Call
+        return E_AST_POP;
     }
 
     case '.':
@@ -626,7 +693,7 @@ int ast_expression_from_tokens(
             return E_AST_POP;
         }
 
-        // TODO: Member Functions
+        // TODO: Member Variables/Functions
         glc_log(
           E_ERROR,
           "Member Functions/Variables not implemented! (used at %d:%d)\n",
@@ -637,39 +704,296 @@ int ast_expression_from_tokens(
         return E_AST_UNEXPECTED;
     }
 
-    // Ambiguious Operators (depends on previous)
-    case '-':
-    case '*':
-    case '&':
-    case '!':
-    {
-        // TODO
-        return E_AST_PUSH;
-    }
-
-    // Ambiguious Operators (depends on next)
+    // Comparison Operators (depends on next)
     case '>':
-    case '=':
+    {
+        if (previous == NULL) { break; }
+        parsed->type = E_AST_EXPR_OPER;
+
+        // Peek next
+        struct token *peek = *token_stream;
+        switch ((int) peek->value)
+        {
+        case '=':
+            parsed->value.oper.op = E_AST_OP_GE;
+            (*token_stream)++;
+            break;
+        default: parsed->value.oper.op = E_AST_OP_GT; break;
+        }
+
+        // Read next expr
+        struct ast_expression rhs;
+        error = ast_expression_from_tokens_multi(&rhs, token_stream);
+        if (error < 0) { return error; }
+
+        // Pop previous expr
+        parsed->value.oper.lhs = calloc(sizeof(struct ast_expression), 1);
+        memcpy(parsed->value.oper.lhs, previous, sizeof(struct ast_expression));
+
+        parsed->value.oper.rhs = calloc(sizeof(struct ast_expression), 1);
+        memcpy(parsed->value.oper.rhs, &rhs, sizeof(struct ast_expression));
+
+        return E_AST_POP;
+    }
     case '<':
     {
-        // TODO
-        return E_AST_PUSH;
+        if (previous == NULL) { break; }
+        parsed->type = E_AST_EXPR_OPER;
+
+        // Peek next
+        struct token *peek = *token_stream;
+        switch ((int) peek->value)
+        {
+        case '=':
+            parsed->value.oper.op = E_AST_OP_LE;
+            (*token_stream)++;
+            break;
+        default: parsed->value.oper.op = E_AST_OP_LT; break;
+        }
+
+        // Read next expr
+        struct ast_expression rhs;
+        error = ast_expression_from_tokens_multi(&rhs, token_stream);
+        if (error < 0) { return error; }
+
+        // Pop previous expr
+        parsed->value.oper.lhs = calloc(sizeof(struct ast_expression), 1);
+        memcpy(parsed->value.oper.lhs, previous, sizeof(struct ast_expression));
+
+        parsed->value.oper.rhs = calloc(sizeof(struct ast_expression), 1);
+        memcpy(parsed->value.oper.rhs, &rhs, sizeof(struct ast_expression));
+
+        return E_AST_POP;
+    }
+    case '=':
+    {
+        if (previous == NULL) { break; }
+        parsed->type          = E_AST_EXPR_OPER;
+        parsed->value.oper.op = E_AST_OP_EQ;
+
+        // Pop next
+        struct token *next = (*token_stream)++;
+        if (next->value != '=') { break; }
+
+        // Read next expr
+        struct ast_expression rhs;
+        error = ast_expression_from_tokens_multi(&rhs, token_stream);
+        if (error < 0) { return error; }
+
+        // Pop previous expr
+        parsed->value.oper.lhs = calloc(sizeof(struct ast_expression), 1);
+        memcpy(parsed->value.oper.lhs, previous, sizeof(struct ast_expression));
+
+        parsed->value.oper.rhs = calloc(sizeof(struct ast_expression), 1);
+        memcpy(parsed->value.oper.rhs, &rhs, sizeof(struct ast_expression));
+
+        return E_AST_POP;
+    }
+    case '!':
+    {
+        if (previous == NULL) { break; }
+        parsed->type          = E_AST_EXPR_OPER;
+        parsed->value.oper.op = E_AST_OP_NEQ;
+
+        // Pop next
+        struct token *next = (*token_stream)++;
+        if (next->value != '=') { break; }
+
+        // Read next expr
+        struct ast_expression rhs;
+        error = ast_expression_from_tokens_multi(&rhs, token_stream);
+        if (error < 0) { return error; }
+
+        // Pop previous expr
+        parsed->value.oper.lhs = calloc(sizeof(struct ast_expression), 1);
+        memcpy(parsed->value.oper.lhs, previous, sizeof(struct ast_expression));
+
+        parsed->value.oper.rhs = calloc(sizeof(struct ast_expression), 1);
+        memcpy(parsed->value.oper.rhs, &rhs, sizeof(struct ast_expression));
+
+        return E_AST_POP;
+    }
+
+    // Ambiguious Operators (depends on previous)
+    case '-':
+    {
+        parsed->type = E_AST_EXPR_OPER;
+
+        parsed->value.oper.rhs = calloc(sizeof(struct ast_expression), 1);
+        error = ast_expression_from_tokens_multi(parsed->value.oper.rhs, token_stream);
+        if (error < 0)
+        {
+            free(parsed->value.oper.rhs);
+            return error;
+        }
+
+        if (previous == NULL)
+        {
+            parsed->value.oper.op = E_AST_OP_NEGATE;
+            return E_AST_PUSH;
+        }
+        else
+        {
+            parsed->value.oper.op = E_AST_OP_NEGATE;
+
+            parsed->value.oper.lhs = calloc(sizeof(struct ast_expression), 1);
+            memcpy(parsed->value.oper.lhs, previous, sizeof(struct ast_expression));
+
+            return E_AST_POP;
+        }
+
+        unreachable();
+    }
+    case '*':
+    {
+        parsed->type = E_AST_EXPR_OPER;
+
+        parsed->value.oper.rhs = calloc(sizeof(struct ast_expression), 1);
+        error = ast_expression_from_tokens_multi(parsed->value.oper.rhs, token_stream);
+        if (error < 0)
+        {
+            free(parsed->value.oper.rhs);
+            return error;
+        }
+
+        if (previous == NULL)
+        {
+            parsed->value.oper.op = E_AST_OP_DEREF;
+            return E_AST_PUSH;
+        }
+        else
+        {
+            parsed->value.oper.op = E_AST_OP_MUL;
+
+            parsed->value.oper.lhs = calloc(sizeof(struct ast_expression), 1);
+            memcpy(parsed->value.oper.lhs, previous, sizeof(struct ast_expression));
+
+            return E_AST_POP;
+        }
+
+        unreachable();
+    }
+    case '&':
+    {
+        parsed->type = E_AST_EXPR_OPER;
+
+        parsed->value.oper.rhs = calloc(sizeof(struct ast_expression), 1);
+        error = ast_expression_from_tokens_multi(parsed->value.oper.rhs, token_stream);
+        if (error < 0)
+        {
+            free(parsed->value.oper.rhs);
+            return error;
+        }
+
+        if (previous == NULL)
+        {
+            parsed->value.oper.op = E_AST_OP_BORROW;
+            return E_AST_PUSH;
+        }
+        else
+        {
+            parsed->value.oper.op = E_AST_OP_AND;
+
+            parsed->value.oper.lhs = calloc(sizeof(struct ast_expression), 1);
+            memcpy(parsed->value.oper.lhs, previous, sizeof(struct ast_expression));
+
+            return E_AST_POP;
+        }
+
+        unreachable();
     }
 
     // Binary Operators
     case '+':
+    {
+        if (previous == NULL) { break; }
+
+        parsed->type          = E_AST_EXPR_OPER;
+        parsed->value.oper.op = E_AST_OP_ADD;
+
+        struct ast_expression rhs;
+        error = ast_expression_from_tokens_multi(&rhs, token_stream);
+        if (error < 0) { return error; }
+
+        parsed->value.oper.lhs = calloc(sizeof(struct ast_expression), 1);
+        memcpy(parsed->value.oper.lhs, previous, sizeof(struct ast_expression));
+
+        parsed->value.oper.rhs = calloc(sizeof(struct ast_expression), 1);
+        memcpy(parsed->value.oper.rhs, &rhs, sizeof(struct ast_expression));
+
+        return E_AST_POP;
+    }
     case '^':
+    {
+        if (previous == NULL) { break; }
+
+        parsed->type          = E_AST_EXPR_OPER;
+        parsed->value.oper.op = E_AST_OP_XOR;
+
+        struct ast_expression rhs;
+        error = ast_expression_from_tokens_multi(&rhs, token_stream);
+        if (error < 0) { return error; }
+
+        parsed->value.oper.lhs = calloc(sizeof(struct ast_expression), 1);
+        memcpy(parsed->value.oper.lhs, previous, sizeof(struct ast_expression));
+
+        parsed->value.oper.rhs = calloc(sizeof(struct ast_expression), 1);
+        memcpy(parsed->value.oper.rhs, &rhs, sizeof(struct ast_expression));
+
+        return E_AST_POP;
+    }
     case '/':
+    {
+        if (previous == NULL) { break; }
+
+        parsed->type          = E_AST_EXPR_OPER;
+        parsed->value.oper.op = E_AST_OP_DIV;
+
+        struct ast_expression rhs;
+        error = ast_expression_from_tokens_multi(&rhs, token_stream);
+        if (error < 0) { return error; }
+
+        parsed->value.oper.lhs = calloc(sizeof(struct ast_expression), 1);
+        memcpy(parsed->value.oper.lhs, previous, sizeof(struct ast_expression));
+
+        parsed->value.oper.rhs = calloc(sizeof(struct ast_expression), 1);
+        memcpy(parsed->value.oper.rhs, &rhs, sizeof(struct ast_expression));
+
+        return E_AST_POP;
+    }
     case '|':
     {
-        // TODO
+        if (previous == NULL) { break; }
+
+        parsed->type          = E_AST_EXPR_OPER;
+        parsed->value.oper.op = E_AST_OP_OR;
+
+        struct ast_expression rhs;
+        error = ast_expression_from_tokens_multi(&rhs, token_stream);
+        if (error < 0) { return error; }
+
+        parsed->value.oper.lhs = calloc(sizeof(struct ast_expression), 1);
+        memcpy(parsed->value.oper.lhs, previous, sizeof(struct ast_expression));
+
+        parsed->value.oper.rhs = calloc(sizeof(struct ast_expression), 1);
+        memcpy(parsed->value.oper.rhs, &rhs, sizeof(struct ast_expression));
+
         return E_AST_POP;
     }
 
     // Unary Operators
     case '~':
     {
-        // TODO
+        parsed->type          = E_AST_EXPR_OPER;
+        parsed->value.oper.op = E_AST_OP_NEGATE;
+
+        struct ast_expression rhs;
+        error = ast_expression_from_tokens_multi(&rhs, token_stream);
+        if (error < 0) { return error; }
+
+        parsed->value.oper.rhs = calloc(sizeof(struct ast_expression), 1);
+        memcpy(parsed->value.oper.rhs, &rhs, sizeof(struct ast_expression));
+
         return E_AST_PUSH;
     }
     }
@@ -678,8 +1002,8 @@ int ast_expression_from_tokens(
       E_ERROR,
       "Unexpected '%c' at %d:%d\n",
       next.value,
-      next.debug_info.column,
-      next.debug_info.line);
+      next.debug_info.line,
+      next.debug_info.column);
     return E_AST_UNEXPECTED;
 }
 
@@ -761,57 +1085,9 @@ int ast_program_from_tokens(struct ast_program *program, struct token_stream *to
             }
 
             struct ast_expression expr;
-            int                   result = ast_expression_from_tokens(&expr, NULL, &cursor);
-            if (result < 0)
-            {
-                ast_expression_free(&expr);
-                return result;
-            }
-
-            while (cursor->value != ';')
-            {
-                struct token *prev_cursor = cursor;
-
-                struct ast_expression next_expr;
-                int result = ast_expression_from_tokens(&next_expr, &expr, &cursor);
-                if (result < 0)
-                {
-                    ast_expression_free(&expr);
-                    return result;
-                }
-
-                printf("%d %d\n", prev_cursor->value, cursor->value);
-
-                switch ((enum ast_expression_result) result)
-                {
-                case E_AST_POP: memcpy(&expr, &next_expr, sizeof(struct ast_expression)); break;
-                case E_AST_PUSH:
-                    glc_log(
-                      E_ERROR,
-                      "Unexpected Expression at position %d:%d\n",
-                      prev_cursor->debug_info.line,
-                      prev_cursor->debug_info.column);
-
-                    ast_expression_free(&expr);
-                    ast_expression_free(&next_expr);
-                    return E_AST_UNEXPECTED;
-                }
-            }
-
+            int                   result = ast_expression_from_tokens_delim(&expr, &cursor, ';');
+            if (result < 0) { return result; }
             current->data.value = expr;
-
-            next = *(cursor++);
-            if (next.value != ';')
-            {
-                glc_log(
-                  E_ERROR,
-                  "Expected ';' at position %d:%d\n",
-                  next.debug_info.line,
-                  next.debug_info.column);
-
-                ast_program_free(program);
-                return E_AST_UNEXPECTED;
-            }
 
             break;
         }
