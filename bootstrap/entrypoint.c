@@ -278,7 +278,11 @@ int main(const int argc, const char *const *argv)
 
     printf("Attempting to parse...\n");
 
-    struct ast_program program;
+    struct ast_program program = {
+        .node_capacity = 0,
+        .num_nodes     = 0,
+        .nodes         = NULL,
+    };
     result = ast_program_from_tokens(&program, &stream);
     switch (result)
     {

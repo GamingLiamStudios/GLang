@@ -128,7 +128,7 @@ struct ast_expression
         struct
         {
             struct ast_expression *expression;
-            struct ast_type       *target;
+            struct ast_type        target;
         } cast;
 
         // Used by; Unary, Binary

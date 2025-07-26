@@ -28,8 +28,8 @@
 // Function ::= "fn" IDENTIFIER "(" (NAME ":"" TYPE)* ")" "->" TYPE BlockExpr
 // External ::= "extern" "fn" IDENTIFIER "(" (NAME ":"" TYPE)* ")" "->" TYPE ";"
 // Constant ::= "const" IDENTIFIER ":" TYPE "=" Expression ";"
-// TODO: Struct
-// TODO: Enum
+// TODO: Struct Syntax
+// TODO: Enum Syntax
 
 // ExprStmt ::= Expression ";"
 // RetStmt ::= "return" Expression? ";"
@@ -47,18 +47,56 @@
 // LoopExpr ::= "loop" BlockExpr
 // WhileExpr ::= "while" Expression BlockExpr
 // CastExpr ::= Expression as TYPE
-// TODO: Match
+// TODO: Match Syntax
 
 #define PROGRAM_NODECAPACITY 256
 #define PROGRAM_NODEGROWTH   2
 
 void ast_program_free(struct ast_program *program)
 {
-    // TODO
+    if (program == NULL) { return; }
+
+    for (size_t i = 0; i < program->num_nodes; i++) { ast_node_free(program->nodes + i); }
+
+    free(program->nodes);
+    program->nodes         = NULL;
+    program->num_nodes     = 0;
+    program->node_capacity = 0;
 }
 void ast_node_free(struct ast_node *node)
 {
-    // TODO
+    if (node == NULL) { return; }
+
+    ast_type_free(&node->node_type);
+    free((char *) node->ident);
+    node->ident = NULL;
+
+    switch (node->type)
+    {
+    case E_AST_NODE_CONSTANT: ast_expression_free(&node->data.value); break;
+    case E_AST_NODE_EXTERNAL:
+    case E_AST_NODE_FUNCTION:
+    {
+        // Blind safety in my own code
+        if (node->data.function.num_params > 0)
+        {
+            for (size_t i = 0; i < node->data.function.num_params; i++)
+            {
+                free((char *) node->data.function.param_idents[i]);
+                ast_type_free(node->data.function.param_types + i);
+            }
+            free(node->data.function.param_idents);
+            free(node->data.function.param_types);
+        }
+        node->data.function.num_params   = 0;
+        node->data.function.param_idents = NULL;
+        node->data.function.param_types  = NULL;
+
+        ast_expression_free(node->data.function.body);
+        node->data.function.body = NULL;
+        break;
+    }
+    }
 }
 void ast_statement_free(struct ast_statement *statement)
 {
@@ -66,12 +104,103 @@ void ast_statement_free(struct ast_statement *statement)
 }
 void ast_expression_free(struct ast_expression *expression)
 {
-    // TODO
+    if (expression == NULL) { return; }
+    switch (expression->type)
+    {
+    case E_AST_EXPR_VARIABLE:
+        free((char *) expression->value.variable_ident);
+        expression->value.variable_ident = NULL;
+        break;
+
+    case E_AST_EXPR_CONSTANT:
+        if (expression->value.constant.type == E_AST_CONST_STRING)
+        {
+            free((char *) expression->value.constant.value.string);
+            expression->value.constant.value.string = NULL;
+        }
+        break;
+
+    case E_AST_EXPR_BLOCK:
+        for (size_t i = 0; i < expression->value.block.num_statements; i++)
+            ast_statement_free(expression->value.block.statements + i);
+        free(expression->value.block.statements);
+        expression->value.block.statements     = NULL;
+        expression->value.block.num_statements = 0;
+
+        ast_expression_free(expression->value.block.expression);
+        free(expression->value.block.expression);
+        expression->value.block.expression = NULL;
+        break;
+
+    case E_AST_EXPR_SCOPE:
+    case E_AST_EXPR_LOOP:
+        ast_expression_free(expression->value.expr);
+        free(expression->value.expr);
+        expression->value.expr = NULL;
+        break;
+
+    case E_AST_EXPR_CALL:
+        for (size_t i = 0; i < expression->value.call.num_expressions; i++)
+            ast_expression_free(expression->value.call.expressions[i]);
+        free(expression->value.call.expressions);
+        expression->value.call.expressions     = NULL;
+        expression->value.call.num_expressions = 0;
+        break;
+
+    case E_AST_EXPR_LET:
+        free((char *) expression->value.let.ident);
+        expression->value.let.ident = NULL;
+
+        ast_type_free(expression->value.let.type);
+        free(expression->value.let.type);
+        expression->value.let.type = NULL;
+
+        ast_expression_free(expression->value.let.expression);
+        free(expression->value.let.expression);
+        expression->value.let.expression = NULL;
+        break;
+
+    case E_AST_EXPR_CAST:
+        ast_expression_free(expression->value.cast.expression);
+        free(expression->value.cast.expression);
+        expression->value.cast.expression = NULL;
+
+        ast_type_free(&expression->value.cast.target);
+        break;
+
+    case E_AST_EXPR_UNARY:
+    case E_AST_EXPR_BINARY:
+        ast_expression_free(expression->value.oper.lhs);
+        free(expression->value.oper.lhs);
+        expression->value.oper.lhs = NULL;
+
+        ast_expression_free(expression->value.oper.rhs);
+        free(expression->value.oper.rhs);
+        expression->value.oper.rhs = NULL;
+        break;
+
+    case E_AST_EXPR_IF:
+    case E_AST_EXPR_WHILE:
+        ast_expression_free(expression->value.branch.condition);
+        free(expression->value.branch.condition);
+        expression->value.branch.condition = NULL;
+
+        ast_expression_free(expression->value.branch.if_true);
+        free(expression->value.branch.if_true);
+        expression->value.branch.if_true = NULL;
+
+        ast_expression_free(expression->value.branch.if_false);
+        free(expression->value.branch.if_false);
+        expression->value.branch.if_false = NULL;
+        break;
+    }
 }
 void ast_type_free(struct ast_type *type)
 {
     if (type == NULL) { return; }
+
     free((char *) type->type_name);
+    type->type_name = NULL;
 }
 
 int ast_program_grow(struct ast_program *program)
@@ -126,6 +255,9 @@ int ast_expression_from_tokens(
   struct token         **token_stream)
 {
     int error;
+
+    if (token_stream == NULL || *token_stream == NULL) { return -1; }
+    if (parsed == NULL) { return -1; }
 
     struct token next = *((*token_stream)++);
     switch (next.value)
@@ -194,12 +326,23 @@ int ast_expression_from_tokens(
         error = ast_type_from_tokens(&target, token_stream);
         if (error < 0) { return error; }
 
+        if (previous == NULL)
+        {
+            glc_log(
+              E_ERROR,
+              "Unexpected `as` at position %d:%d\n",
+              next.debug_info.line,
+              next.debug_info.column);
+
+            ast_type_free(&target);
+            return E_AST_UNEXPECTED;
+        }
+
         parsed->type                  = E_AST_EXPR_CAST;
         parsed->value.cast.expression = calloc(sizeof(struct ast_expression), 1);
         memcpy(parsed->value.cast.expression, previous, sizeof(struct ast_expression));
 
-        parsed->value.cast.target = calloc(sizeof(struct ast_type), 1);
-        memcpy(parsed->value.cast.target, &target, sizeof(struct ast_type));
+        memcpy(&parsed->value.cast.target, &target, sizeof(struct ast_type));
         // Can leave `target` dangling due to reuse of internal data - essentially moving it
 
         return E_AST_POP;
@@ -416,7 +559,46 @@ int ast_expression_from_tokens(
 
     case '(':
     {
-        // TODO
+        struct ast_expression expr;
+        int                   result = ast_expression_from_tokens(&expr, NULL, token_stream);
+        if (result < 0)
+        {
+            ast_expression_free(&expr);
+            return result;
+        }
+
+        while ((*token_stream)->value != ')')
+        {
+            struct token *prev_cursor = *token_stream;
+
+            struct ast_expression next_expr;
+            int result = ast_expression_from_tokens(&next_expr, &expr, token_stream);
+            if (result < 0)
+            {
+                ast_expression_free(&expr);
+                return result;
+            }
+
+            switch ((enum ast_expression_result) result)
+            {
+            case E_AST_POP: memcpy(&expr, &next_expr, sizeof(struct ast_expression)); break;
+            case E_AST_PUSH:
+                glc_log(
+                  E_ERROR,
+                  "Unexpected Expression at position %d:%d\n",
+                  prev_cursor->debug_info.line,
+                  prev_cursor->debug_info.column);
+
+                ast_expression_free(&expr);
+                ast_expression_free(&next_expr);
+                return E_AST_UNEXPECTED;
+            }
+        }
+
+        parsed->type       = E_AST_EXPR_SCOPE;
+        parsed->value.expr = calloc(sizeof(struct ast_expression), 1);
+        memcpy(parsed->value.expr, &expr, sizeof(struct ast_expression));
+
         return E_AST_PUSH;
     }
 
@@ -543,8 +725,10 @@ int ast_program_from_tokens(struct ast_program *program, struct token_stream *to
                 ast_program_free(program);
                 return E_AST_UNEXPECTED;
             }
-            // FIXME
-            current->ident = next.data.string;
+
+            size_t len     = strlen(next.data.string);
+            current->ident = calloc(sizeof(char), len + 1);
+            memcpy((char *) current->ident, next.data.string, sizeof(char) * len);
 
             next = *(cursor++);
             if (next.value != ':')
