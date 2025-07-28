@@ -7,12 +7,13 @@ what.
 ```txt
 TODO: Traits
 TODO: impl (Member Functions)
-Program ::= (ExternDecl | FunctionDecl | StructDecl | EnumDecl | Stmt)* EOF
+Program ::= (ExternDecl | FunctionDecl | StructDecl | EnumDecl | ConstDecl)* EOF
 
 ExternDecel ::= "extern" "fn" IDENTIFIER "(" ParamList? ")" ("->" Type)? ";"
 FunctionDecl ::= "fn" IDENTIFIER "(" ParamList? ")" ("->" Type)? Block
 StructDecl ::= "struct" IDENTIFIER "{" ParamList? "}"
 EnumDecl ::= "enum" IDENTIFIER "{" EnumList? "}"
+ConstDecl ::= "const" IDENTIFIER ":" Type "=" Expr ";"
 
 ParamList ::= Param ("," Param)*
 Param ::= IDENTIFIER ":" Type
@@ -25,23 +26,23 @@ EnumItem ::= IDENTIFIER "(" Type ("," Type)* ")"
 TODO: Generics
 Type ::= IDENTIFIER
 
-Stmt ::= LetStmt | ExprStmt | Block | IfExpr | LoopExpr | WhileExpr | Break | Continue | Return
+Stmt ::= LetStmt | IfExpr | LoopExpr | WhileExpr | Break | Continue | Return | ExprStmt
 
 LetStmt ::= "let" IDENTIFIER (":" Type)? "=" Expr ";"
 ExprStmt ::= Expr ";"
-Block ::= "{" Stmt* Expr? "}"
 Break ::= "break" Expr? ";"
-Continue ::= "continue" ";"
 Return ::= "return" Expr? ";"
+Continue ::= "continue" ";"
 
-Expr ::= Assign | Equality | Lambda | LoopExpr | IfExpr | WhileExpr | Struct | Cast
+Expr ::= Assign | Equality | Lambda | LoopExpr | IfExpr | WhileExpr | Struct | Cast | Block
 Assign ::= IDENTIFIER ("=" | "+=" | "*=" | "-=" | "/=" | "|=" | "&=") Expr
 Struct ::= IDENTIFIER "{" NamedArgList? "}"
 Cast ::= Expr "as" Type
+Block ::= "{" Stmt* Expr "}"
 
-Lambda ::= "|" ParamList? "|" ("->" Type) Block
+Lambda ::= "|" ParamList? "|" ("->" Type)? Block
 LoopExpr ::= "loop" Block
-IfExpr ::= "if" Expr Block ("else" Expr)?
+IfExpr ::= "if" Expr Block ("else" (IfExpr | Block))?
 WhileExpr ::= "while" Expr Block
 
 LambdaList ::= LambdaParam ("," LambdaParam)*
@@ -51,7 +52,7 @@ Equality ::= Comparison (("==" | "!=") Comparison)*
 Comparison ::= Term (("<" | ">" | "<=" | ">=") Term)*
 Term ::= Factor (("+" | "-") Factor)*
 Factor ::= Unary (("*" | "/") Unary)*
-Unary ::= ("!" | "-" | "~") Unary
+Unary ::= ("!" | "-" | "~") Call
           | Call
 
 Call ::= Primary ("(" ArgList? ")")*
@@ -59,5 +60,5 @@ Primary ::= NUMBER | STRING | IDENTIFIER | "(" Expr ")"
 
 ArgList ::= Expr ("," Expr)*
 NamedArgList ::= NamedArg ("," NamedArg)*
-NamedArg ::= IDENTIFIER ":" Expr
+NamedArg ::= IDENTIFIER (":" Expr)?
 ```

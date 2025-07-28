@@ -12,8 +12,8 @@ enum ast_operation
     E_AST_OP_DIV,    // /
 
     // Binary Bitwise
-    E_AST_OP_AND,    // &
-    E_AST_OP_OR,     // |
+    E_AST_OP_AND,    // & or && (Boolean)
+    E_AST_OP_OR,     // | or || (Boolean)
     E_AST_OP_XOR,    // ^
 
     // Comparisons
@@ -31,117 +31,133 @@ enum ast_operation
     E_AST_OP_UNWRAP,    // ?
 
     // Unary Bitwise
-    E_AST_OP_INVERT,    // ~
+    E_AST_OP_INVERT,    // ~ or ! (Boolean)
 };
 
 struct ast_type
 {
-    const char *type_name;
+    const char *typename;
     // TODO: Generics
+};
+
+struct ast_param
+{
+    const char     *name;
+    struct ast_type type;
+};
+
+struct ast_enum_value
+{
+    enum
+    {
+        E_AST_ENUM_BASIC,
+        E_AST_ENUM_TUPLE,
+        E_AST_ENUM_STRUCT,
+    } type;
+
+    const char *ident;
+    size_t      count;
+
+    union
+    {
+        // Used by; Struct
+        struct ast_param *param_list;
+
+        // Used by; Tuple
+        struct ast_type *type_list;
+    } value;
+};
+
+struct ast_argument
+{
+    const char            *name;
+    struct ast_expression *value;
 };
 
 struct ast_expression
 {
     enum
     {
-        E_AST_EXPR_CONSTANT = -127,
+        E_AST_EXPR_ASSIGN,
+        E_AST_EXPR_BLOCK,
+
+        E_AST_EXPR_CAST,
+        E_AST_EXPR_LAMBDA,
+        E_AST_EXPR_STRUCT,
+
+        E_AST_EXPR_OPERATION,
+        E_AST_EXPR_CALL,
+        E_AST_EXPR_CONST,
         E_AST_EXPR_VARIABLE,
 
-        E_AST_EXPR_BLOCK,
-        E_AST_EXPR_SCOPE,
-
-        E_AST_EXPR_CALL,
         E_AST_EXPR_LOOP,
-
-        E_AST_EXPR_LET,
-        E_AST_EXPR_CAST,
-
-        E_AST_EXPR_OPER,
-
         E_AST_EXPR_IF,
         E_AST_EXPR_WHILE,
     } type;
 
-    // TODO: Debug info
-
     union
     {
-        // Used by; Variable
-        const char *variable_ident;
-
-        // Used by; Constant
+        // Used by; Assign
         struct
         {
-            enum
-            {
-                E_AST_CONST_STRING,
-                E_AST_CONST_INTEGER,
-                E_AST_CONST_FLOATING,
-            } type;
+            const char            *ident;
+            struct ast_expression *expr;
+        } assign;
 
-            union
-            {
-                // Sign is handled by negate operation
-                unsigned long integer;
-                const char   *string;
-
-                struct
-                {
-                    signed long   integer;
-                    unsigned long fractional;
-                } floating;
-            } value;
-        } constant;
-
-        // Used by; Block
+        // Used by; Block, Loop
         struct
         {
-            struct ast_statement *statements;
-            size_t                num_statements;
+            struct ast_statement *stmts;
+            size_t                num_stmts;
 
-            struct ast_expression *expression;    // NULL if void
+            struct ast_expression *expr;
         } block;
-
-        // Used by; Scope, Loop
-        struct ast_expression *expr;
-
-        // Used by; Call
-        struct
-        {
-            // Includes function as expressions[0]
-            struct ast_expression **expressions;
-            size_t                  num_expressions;
-        } call;
-
-        // Used by; Let
-        struct
-        {
-            const char      *ident;
-            struct ast_type *type;
-
-            struct ast_expression *expression;
-        } let;
 
         // Used by; Cast
         struct
         {
-            struct ast_expression *expression;
+            struct ast_expression *expr;
             struct ast_type        target;
         } cast;
 
-        // Used by; Operation
+        // Used by; Lambda
         struct
         {
-            enum ast_operation     op;
+            struct ast_param *param_list;
+            size_t            num_params;
+
+            struct ast_type       *result;
+            struct ast_expression *expr;
+        } lambda;
+
+        // Used by; Struct
+        struct
+        {
+            const char *ident;
+
+            struct ast_argument *args;
+            size_t               num_args;
+        } struct_call;
+
+        struct
+        {
+            enum ast_operation     type;
             struct ast_expression *lhs;
             struct ast_expression *rhs;
-        } oper;
+        } operation;
+
+        // Used by; Call
+        struct
+        {
+            struct ast_expression *function;
+            struct ast_expression *args;
+            size_t                 num_args;
+        } call;
 
         // Used by; If, While
         struct
         {
-            struct ast_expression *condition;
-
+            struct ast_expression *cond;
             struct ast_expression *if_true;
             struct ast_expression *if_false;
         } branch;
@@ -152,63 +168,104 @@ struct ast_statement
 {
     enum
     {
+        E_AST_STMT_LET,
         E_AST_STMT_EXPR,
-        E_AST_STMT_RETURN,
-        E_AST_STMT_BREAK,
 
+        E_AST_STMT_IF,
+        E_AST_STMT_LOOP,
+        E_AST_STMT_WHILE,
+
+        E_AST_STMT_BREAK,
         E_AST_STMT_CONTINUE,
+        E_AST_STMT_RETURN,
     } type;
 
-    // Why union when (most) types use expr? future proofing ig
     union
     {
-        struct ast_expression *expr;    // NULL if void
-    } data;
+        // Used by; Let
+        struct
+        {
+            const char      *ident;
+            struct ast_type *result;
+
+            struct ast_expression expr;
+        } let;
+
+        // Used by; If, While
+        struct
+        {
+            struct ast_expression  cond;
+            struct ast_expression  if_true;
+            struct ast_expression *if_false;
+        } branch;
+
+        // Used by; Expr, Break, Return, Loop
+        struct ast_expression *expr;
+    } value;
 };
 
-struct ast_node
+struct ast_block
+{
+    struct ast_statement *statements;
+    size_t                num_statements;
+
+    struct ast_expression *expression;
+};
+
+struct ast_decl
 {
     enum
     {
-        E_AST_NODE_FUNCTION,
-        E_AST_NODE_EXTERNAL,
-        E_AST_NODE_CONSTANT,
+        E_AST_DECL_FUNCTION,
+        E_AST_DECL_EXTERN,
+        E_AST_DECL_STRUCT,
+        E_AST_DECL_ENUM,
+        E_AST_DECL_CONST,
     } type;
-
-    const char     *ident;
-    struct ast_type node_type;
 
     union
     {
-        // Used by; Function, External
+        // Used by; Function, Extern
         struct
         {
-            const char     **param_idents;
-            struct ast_type *param_types;
-            size_t           num_params;
+            const char     *ident;
+            struct ast_type result;
 
-            struct ast_expression *body;    // NULL if external
+            struct ast_param *param_list;
+            struct ast_block *body;
         } function;
 
-        // Used by; Constant
-        struct ast_expression value;
-    } data;
+        // Used by; Const
+        struct
+        {
+            const char     *ident;
+            struct ast_type result;
+
+            struct ast_expression value;
+        } constant;
+
+        // Used by; Enum
+        struct
+        {
+            struct ast_enum_value *values;
+        } enum_decl;
+
+        // Used by; Struct
+        struct
+        {
+            struct ast_param *param_list;
+        } struct_decl;
+    } value;
 };
 
 struct ast_program
 {
-    struct ast_node *nodes;
-    size_t           num_nodes;
-    size_t           node_capacity;
+    struct ast_decl *root_nodes;
+    size_t           capacity;
+    size_t           count;
 };
 
-void ast_program_free(struct ast_program *program);
-void ast_node_free(struct ast_node *node);
-void ast_statement_free(struct ast_statement *statement);
-void ast_expression_free(struct ast_expression *expression);
-void ast_type_free(struct ast_type *type);
-
-enum ast_program_create_error
+enum ast_parse_error
 {
     E_AST_MEMORYERROR = -255,
     E_AST_UNEXPECTED,
@@ -216,4 +273,14 @@ enum ast_program_create_error
     E_AST_DELIM,
 };
 
-int ast_program_from_tokens(struct ast_program *program, struct token_stream *token_stream);
+int ast_type_free(struct ast_type *type);
+int ast_parm_free(struct ast_param *param);
+int ast_enum_value_free(struct ast_enum_value *value);
+int ast_argument_free(struct ast_argument *arg);
+int ast_expression_free(struct ast_expression *expr);
+int ast_statement_free(struct ast_statement *statement);
+int ast_decl_free(struct ast_decl *decl);
+int ast_program_free(struct ast_program *progrma);
+
+int ast_program_parse(struct ast_program *program, struct token_stream *tokens);
+int ast_decl_parse(struct ast_decl *decl, struct token_stream *tokens);

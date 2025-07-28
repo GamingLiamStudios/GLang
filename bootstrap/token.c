@@ -14,13 +14,13 @@
 
 void token_stream_free(struct token_stream *tokens)
 {
-    if (tokens->tokens == NULL) { return; }
+    if (tokens == NULL || tokens->tokens == NULL) { return; }
     for (size_t i = 0; i < tokens->size; i++)
     {
         struct token token = tokens->tokens[i];
         switch (token.value)
         {
-        case E_TOKEN_IDENTIFIER:
+        case E_TOKEN_IDENT:
         case E_TOKEN_STRING: free((char *) token.data.string);
 
         default: continue;
@@ -36,35 +36,58 @@ void token_stream_free(struct token_stream *tokens)
 
 int token_stream_expand(struct token_stream *tokens)
 {
+    if (tokens == NULL) { return E_TOK_INVALIDINPUT; }
     tokens->capacity *= TOKENSTREAM_GROWTHFACTOR;
 
     struct token *resized = realloc(tokens->tokens, sizeof(struct token) * tokens->capacity);
     if (resized == NULL)
     {
         token_stream_free(tokens);
-        return E_MEMORYERROR;
+        return E_TOK_MEMORYERROR;
     }
 
     return 0;
 }
 
+void token_debug(FILE *restrict file, struct token *restrict tok)
+{
+    if (file == NULL || tok == NULL) { return; }
+    switch (tok->value)
+    {
+    case E_TOKEN_INTEGER: printf("Integer(%lu)", tok->data.integer); return;
+    case E_TOKEN_STRING: printf("String(\"%s\")", tok->data.string); return;
+    case E_TOKEN_IDENT: printf("Ident(\"%s\")", tok->data.string); return;
+    // TODO: too lazy to impl this rn lol
+    case E_TOKEN_EOF: return;
+    }
+
+    printf("Unknown(%d)", tok->value);
+}
+
 int tokenize_file(struct token_stream *tokens, FILE *file)
 {
+    if (tokens == NULL) { return E_TOK_INVALIDINPUT; }
+
+    char             *token_buffer;
+    size_t            buffer_len;
+    struct debug_info debug_info;
+    char              c, prev;
+
     // Create initial token stream
     tokens->tokens   = calloc(TOKENSTREAM_CAPACITY, sizeof(struct token));
     tokens->capacity = TOKENSTREAM_CAPACITY;
     tokens->size     = 0;
 
-    char *token_buffer = malloc(TOKENBUFFER_SIZE);
-    memset(token_buffer, 0, TOKENBUFFER_SIZE);
-    size_t buffer_len = 0;
+    token_buffer = calloc(TOKENBUFFER_SIZE, sizeof(char));
+    buffer_len   = 0;
 
-    struct debug_info debug_info = {
+    debug_info = (struct debug_info) {
         .line   = 1,
         .column = 0,
     };
 
-    char c;
+    c = prev = ' ';
+
     while ((c = fgetc(file)) != EOF)
     {
         debug_info.column += 1;
@@ -156,7 +179,7 @@ int tokenize_file(struct token_stream *tokens, FILE *file)
                     }
                     else if (strncmp(token_buffer, "fn", buffer_len) == 0)
                     {
-                        tokens->tokens[tokens->size++].value = E_TOKEN_FUNCTION;
+                        tokens->tokens[tokens->size++].value = E_TOKEN_FN;
                     }
                     else if (strncmp(token_buffer, "struct", buffer_len) == 0)
                     {
@@ -172,7 +195,7 @@ int tokenize_file(struct token_stream *tokens, FILE *file)
                     }
                     else if (strncmp(token_buffer, "impl", buffer_len) == 0)
                     {
-                        tokens->tokens[tokens->size++].value = E_TOKEN_IMPLEMENTS;
+                        tokens->tokens[tokens->size++].value = E_TOKEN_IMPL;
                     }
                     else if (strncmp(token_buffer, "extern", buffer_len) == 0)
                     {
@@ -248,9 +271,9 @@ int tokenize_file(struct token_stream *tokens, FILE *file)
             token_buffer[buffer_len++]         = c;
             continue;
         }
-        if (isalpha(c))
+        if (isalpha(c) || c == '_')
         {
-            tokens->tokens[tokens->size].value = E_TOKEN_IDENTIFIER;
+            tokens->tokens[tokens->size].value = E_TOKEN_IDENT;
             token_buffer[buffer_len++]         = c;
             continue;
         }
@@ -263,9 +286,89 @@ int tokenize_file(struct token_stream *tokens, FILE *file)
 
         if (isspace(c)) { continue; }
 
+        // Check against known tokens
+        int result = c;
+        switch (c)
+        {
+        case '(': result = E_TOKEN_LPAREN; break;
+        case ')': result = E_TOKEN_RPAREN; break;
+        case '{': result = E_TOKEN_LBRACE; break;
+        case '}': result = E_TOKEN_RBRACE; break;
+        case '[': result = E_TOKEN_LBRACK; break;
+        case ']': result = E_TOKEN_RBRACK; break;
+
+        case '+': result = E_TOKEN_PLUS; break;
+        case '-': result = E_TOKEN_MINUS; break;
+        case '*': result = E_TOKEN_STAR; break;
+        case '/': result = E_TOKEN_SLASH; break;
+
+        case ';': result = E_TOKEN_SEMICOLON; break;
+        case ',': result = E_TOKEN_COMMA; break;
+        case '.': result = E_TOKEN_POINT; break;
+        case ':': result = E_TOKEN_COLON; break;
+
+        case '?': result = E_TOKEN_QUESTION; break;
+        case '~': result = E_TOKEN_TILDE; break;
+        case '^': result = E_TOKEN_CARET; break;
+
+        case '<': result = E_TOKEN_LT; break;
+        case '!': result = E_TOKEN_EXMARK; break;
+
+        case '>':
+            if (prev == '-')
+            {
+                tokens->size--;
+                result = E_TOKEN_IS;
+            }
+            else { result = E_TOKEN_GT; }
+            break;
+        case '&':
+            if (prev == '&')
+            {
+                tokens->size--;
+                result = E_TOKEN_ANDAND;
+            }
+            else { result = E_TOKEN_AND; }
+            break;
+        case '|':
+            if (prev == '|')
+            {
+                tokens->size--;
+                result = E_TOKEN_BARBAR;
+            }
+            else { result = E_TOKEN_BAR; }
+            break;
+
+        case '=':
+            if (prev == '=')
+            {
+                tokens->size--;
+                result = E_TOKEN_EQEQ;
+            }
+            else if (prev == '!')
+            {
+                tokens->size--;
+                result = E_TOKEN_NEQ;
+            }
+            else if (prev == '<')
+            {
+                tokens->size--;
+                result = E_TOKEN_LEQ;
+            }
+            else if (prev == '!')
+            {
+                tokens->size--;
+                result = E_TOKEN_GEQ;
+            }
+            else { result = E_TOKEN_EQUAL; }
+            break;
+        }
+
         // Unknown token
-        tokens->tokens[tokens->size].value = c;
+        tokens->tokens[tokens->size].value = result;
         tokens->size++;
+
+        prev = c;
     }
 
     if (buffer_len != 0)
