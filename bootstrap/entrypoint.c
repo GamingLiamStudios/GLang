@@ -230,6 +230,7 @@ int main(const int argc, const char *const *argv)
     // Compilation pipeline;
     // Tokenization; Convert input file into stream of tokens
     // Parsing; Parse stream of tokens into Abstract Syntax Tree
+    // Validation; Check AST contains valid code
     // Compile; Generate LLVM IR from AST
 
     // First step in compiling; Tokenization
@@ -244,8 +245,8 @@ int main(const int argc, const char *const *argv)
         return errno;
     }
 
-    struct token_stream stream;
-    int                 result = tokenize_file(&stream, input_file);
+    struct token *stream;
+    ptrdiff_t     result = tokenize_file(&stream, input_file);
     switch (result)
     {
     case E_TOK_MEMORYERROR:
@@ -253,27 +254,28 @@ int main(const int argc, const char *const *argv)
     case E_TOK_INVALIDINPUT: fclose(input_file); return -1;
     }
 
-    printf("%lu Tokens\n", stream.size);
+    glc_log(E_DEBUG, "%lu Tokens\n", result);
 
+    // Next step; Parsing
     struct ast_program program = {
         .capacity   = 0,
         .count      = 0,
         .root_nodes = NULL,
     };
-    result = ast_program_parse(&program, &stream);
-    switch (result)
+    result = ast_parse_program(&program, stream);
+    if (result < 0)
     {
-    case E_AST_UNEXPECTED:
-    case E_AST_MEMORYERROR:
+        glc_log(E_ERROR, "Fatal Error! Exiting early...\n");
+
         token_stream_free(&stream);
         fclose(input_file);
         return -1;
     }
 
-    printf("%lu Nodes\n", program.count);
+    glc_log(E_DEBUG, "%lu Nodes\n", program.count);
     for (size_t i = 0; i < program.count; i++)
     {
-        struct ast_node *node = program.root_nodes + i;
+        struct ast_decl *node = program.root_nodes + i;
         // TODO
     }
 

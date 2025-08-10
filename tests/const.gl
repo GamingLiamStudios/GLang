@@ -1,2 +1,2 @@
 const ABC: u32 = 256;
-const DEF: bool = (1 + 1) <= 2;
+const DEF: bool = 1 + 1 <= 2;

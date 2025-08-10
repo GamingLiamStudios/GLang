@@ -11,6 +11,7 @@ cc_binary(
         "llvm.c",
         "llvm.h",
         "log.h",
+        "parse.c",
         "token.c",
         "token.h",
         "tree.c",

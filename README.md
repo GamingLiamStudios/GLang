@@ -5,26 +5,31 @@ what.
 ## Language Syntax
 
 ```txt
+IDENTIFIER ::= [_A-Za-z]* [_A-Za-z0-9]*
+
+TODO: Generics
+Type ::= IDENTIFIER
+
 TODO: Traits
 TODO: impl (Member Functions)
 Program ::= (ExternDecl | FunctionDecl | StructDecl | EnumDecl | ConstDecl)* EOF
 
-ExternDecel ::= "extern" "fn" IDENTIFIER "(" ParamList? ")" ("->" Type)? ";"
-FunctionDecl ::= "fn" IDENTIFIER "(" ParamList? ")" ("->" Type)? Block
-StructDecl ::= "struct" IDENTIFIER "{" ParamList? "}"
-EnumDecl ::= "enum" IDENTIFIER "{" EnumList? "}"
 ConstDecl ::= "const" IDENTIFIER ":" Type "=" Expr ";"
 
 ParamList ::= Param ("," Param)*
 Param ::= IDENTIFIER ":" Type
 
+ExternDecel ::= "extern" "fn" IDENTIFIER "(" ParamList? ")" ("->" Type)? ";"
+FunctionDecl ::= "fn" IDENTIFIER "(" ParamList? ")" ("->" Type)? Block
+StructDecl ::= "struct" IDENTIFIER "{" ParamList? "}"
+
+
 EnumList ::= EnumItem ("," EnumItem)*
 EnumItem ::= IDENTIFIER "(" Type ("," Type)* ")"
            | IDENTIFIER "{" Param ("," Param)* "}"
            | IDENTIFIER
+EnumDecl ::= "enum" IDENTIFIER "{" EnumList? "}"
 
-TODO: Generics
-Type ::= IDENTIFIER
 
 Stmt ::= LetStmt | IfExpr | LoopExpr | WhileExpr | Break | Continue | Return | ExprStmt
 
@@ -48,14 +53,13 @@ WhileExpr ::= "while" Expr Block
 LambdaList ::= LambdaParam ("," LambdaParam)*
 LambdaParam ::= IDENTIFIER (":" Type)?
 
-Equality ::= Comparison (("==" | "!=") Comparison)*
-Comparison ::= Term (("<" | ">" | "<=" | ">=") Term)*
-Term ::= Factor (("+" | "-") Factor)*
-Factor ::= Unary (("*" | "/") Unary)*
-Unary ::= ("!" | "-" | "~") Call
-          | Call
+TODO: Bitwise Operators
+Equality ::= Sum (("<" | ">" | "<=" | ">=" |"==" | "!=") Sum)*
+Sum ::= Product (("+" | "-") Product)*
+Product ::= Unary (("*" | "/") Unary)*
+Unary ::= ("!" | "-" | "~")? Call
 
-Call ::= Primary ("(" ArgList? ")")*
+Call ::= Primary ("(" ArgList? ")")?
 Primary ::= NUMBER | STRING | IDENTIFIER | "(" Expr ")"
 
 ArgList ::= Expr ("," Expr)*

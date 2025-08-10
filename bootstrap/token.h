@@ -1,5 +1,6 @@
 #pragma once
 #include <stdio.h>
+#include <stddef.h>
 
 struct debug_info
 {
@@ -78,6 +79,14 @@ struct token
         E_TOKEN_BARBAR,    // ||
         E_TOKEN_ANDAND,    // &&
 
+        E_TOKEN_PLUSEQUAL,     // +=
+        E_TOKEN_MINUSEQUAL,    // -=
+        E_TOKEN_STAREQUAL,     // *=
+        E_TOKEN_SLASHEQUAL,    // /=
+
+        E_TOKEN_BAREQUAL,    // |=
+        E_TOKEN_ANDEQUAL,    // &=
+
         E_TOKEN_IS,    // ->
     } value;           // For unknown ASCII chars; will be value of char
 
@@ -90,14 +99,6 @@ struct token
     struct debug_info debug_info;
 };
 
-struct token_stream
-{
-    struct token *tokens;
-
-    size_t capacity;
-    size_t size;
-};
-
 enum token_error
 {
     E_TOK_MEMORYERROR = -255,
@@ -106,5 +107,9 @@ enum token_error
 };
 
 void token_debug(FILE *file, struct token *tok);
-int  tokenize_file(struct token_stream *tokens, FILE *file);
-void token_stream_free(struct token_stream *tokens);
+int  token_debug_str(char *string, size_t length, struct token *tok);
+
+ptrdiff_t tokenize_file(struct token **tokens, FILE *file);
+void      token_stream_free(struct token **tokens);
+
+size_t token_stream_len(struct token *tokens);
