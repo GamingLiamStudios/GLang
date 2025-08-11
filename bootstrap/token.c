@@ -61,7 +61,7 @@ int token_debug_str(char *restrict string, size_t length, struct token *restrict
     case E_TOKEN_EOF: return 0;
     }
 
-    printf("Unknown(%d)", tok->value);
+    snprintf(string, length, "Unknown(%d)", tok->value);
 }
 
 size_t token_stream_len(struct token *tokens)

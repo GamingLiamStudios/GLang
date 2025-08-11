@@ -89,6 +89,12 @@ ptrdiff_t ast_parse_expression(struct ast_expression *result, struct token *stre
 
     switch ((stream++)->value)
     {
+    // Can be; Primary
+    case E_TOKEN_INTEGER:
+    {
+        return 1;
+    }
+
     // Can be; Assign, Struct, Primary
     case E_TOKEN_IDENT:
     {
@@ -134,7 +140,7 @@ ptrdiff_t ast_parse_expression(struct ast_expression *result, struct token *stre
             result->value.assign.expr = calloc(1, sizeof(struct ast_expression));
             memcpy(result->value.assign.expr, &value, sizeof(struct ast_expression));
 
-            break;
+            return 2 + ret;
         }
 
         // Operator-Assign
@@ -153,6 +159,15 @@ ptrdiff_t ast_parse_expression(struct ast_expression *result, struct token *stre
         }
     }
     }
+
+    stream -= 1;
+    token_debug_str(token_buffer, sizeof(token_buffer), stream);
+    glc_log(
+      E_ERROR,
+      "Unexpected Token %s at %d:%d\n",
+      token_buffer,
+      stream->debug_info.line,
+      stream->debug_info.column);
 
     return -1;
 }
@@ -249,16 +264,52 @@ ptrdiff_t ast_parse_constant(struct ast_decl *result, struct token *stream)
     return stream - start;
 }
 
+struct ast_parse_state
+{
+    enum
+    {
+        E_AST_PARSE_ROOT,    // at Root-level
+
+        E_AST_PARSE_CONST_1,    // const
+        E_AST_PARSE_CONST_2,    // const IDENT
+        E_AST_PARSE_CONST_3,    // const IDENT :
+        E_AST_PARSE_CONST_4,    // const IDENT : Type
+
+        E_AST_PARSE_TYPE
+    } state;
+
+    struct ast_parse_state *prev_state;
+
+    union
+    {
+        struct ast_program root;
+
+        struct
+        {
+            char           *ident;
+            struct ast_type type;
+
+        } const_decl;
+    } data;
+};
+
 /// Returns number of Tokens parsed, or negative for Error
 ptrdiff_t ast_parse_program(struct ast_program *result, struct token *stream)
 {
     struct token *start;
     ptrdiff_t     ret;
 
+    struct ast_parse_state state;
+
     if (result == NULL || stream == NULL) { return E_AST_INVALIDINPUT; }
 
     result->capacity = PROGRAM_NODECAPACITY / 2;
     ast_program_expand(result);
+
+    state = (struct ast_parse_state) {
+        .state     = E_AST_PARSE_ROOT,
+        .data.root = *result,
+    };
 
     start = stream;
     while (stream->value != E_TOKEN_EOF)
