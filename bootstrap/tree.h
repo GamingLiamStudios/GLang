@@ -284,7 +284,7 @@ enum ast_parse_error
     E_AST_UNEXPECTED,
     E_AST_INVALIDINPUT,
     E_AST_DELIM,
-    E_AST_NOSTACK,
+    E_AST_INVALIDSTATE,
 };
 
 void ast_type_free(struct ast_type *type);

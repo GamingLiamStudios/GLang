@@ -27,9 +27,10 @@ static char token_buffer[1024];
 ptrdiff_t ast_parse_expression(struct ast_expression *result, struct token *stream);
 ptrdiff_t ast_parse_statement(struct ast_statement *result, struct token *stream);
 
-int ast_program_expand(struct ast_program *program)
+int ast_program_grow(struct ast_program *program)
 {
     if (program == NULL) { return E_AST_INVALIDINPUT; }
+    if (program->capacity == program->count) { return 0; }
     program->capacity *= PROGRAM_NODEGROWTH;
 
     struct token *resized =
@@ -264,18 +265,24 @@ ptrdiff_t ast_parse_constant(struct ast_decl *result, struct token *stream)
     return stream - start;
 }
 
+// TODO: Make this more of a Stack than a Linked List
 struct ast_parse_state
 {
     enum
     {
         E_AST_PARSE_ROOT,    // at Root-level
 
-        E_AST_PARSE_CONST_1,    // const
-        E_AST_PARSE_CONST_2,    // const IDENT
-        E_AST_PARSE_CONST_3,    // const IDENT :
-        E_AST_PARSE_CONST_4,    // const IDENT : Type
+        E_AST_PARSE_CONST_1,
+        E_AST_PARSE_CONST_2,
+        E_AST_PARSE_CONST_3,
+        E_AST_PARSE_CONST_4,
 
-        E_AST_PARSE_TYPE
+        E_AST_PARSE_TYPE_ROOT,
+
+        E_AST_PARSE_EXPR_ROOT,
+        E_AST_PARSE_EXPR_CONST_INT,
+        E_AST_PARSE_EXPR_CONST_STR,
+        // E_AST_PARSE_EXPR_CONST_FLOAT, // TODO
     } state;
 
     struct ast_parse_state *prev_state;
@@ -289,58 +296,259 @@ struct ast_parse_state
             char           *ident;
             struct ast_type type;
 
+            struct ast_expression value;
         } const_decl;
+
+        struct ast_expression expr;
+
+        // struct ast_type type; For when TYPE becomes more complex
     } data;
 };
 
-/// Returns number of Tokens parsed, or negative for Error
-ptrdiff_t ast_parse_program(struct ast_program *result, struct token *stream)
+/// Returns negative for Error, 0 for success
+/// Mostly written as a LR(0), with occasional LR(1)
+int ast_parse_next(struct ast_parse_state **state, struct token *stream)
 {
-    struct token *start;
-    ptrdiff_t     ret;
+    struct ast_parse_state *cur;
+    struct ast_parse_state *next;
+    if (state == NULL || *state == NULL || stream == NULL) { return E_AST_INVALIDINPUT; }
 
-    struct ast_parse_state state;
+    cur = *state;
 
-    if (result == NULL || stream == NULL) { return E_AST_INVALIDINPUT; }
-
-    result->capacity = PROGRAM_NODECAPACITY / 2;
-    ast_program_expand(result);
-
-    state = (struct ast_parse_state) {
-        .state     = E_AST_PARSE_ROOT,
-        .data.root = *result,
-    };
-
-    start = stream;
-    while (stream->value != E_TOKEN_EOF)
+    switch (cur->state)
     {
-        memset(token_buffer, 0, sizeof(token_buffer));
-
-        if (result->count == result->capacity) { ast_program_expand(result); }
-
+    case E_AST_PARSE_ROOT:
+    {
+        // We at root level of program; can branch into any Decl from here
         switch (stream->value)
         {
+        default:
+            token_debug_str(token_buffer, sizeof(token_buffer), stream);
+            glc_log(
+              E_ERROR,
+              "Unexpected Token `%s` at %d:%d (expected ';')\n",
+              token_buffer,
+              stream->debug_info.line,
+              stream->debug_info.column);
+            return E_AST_UNEXPECTED;
+        case E_TOKEN_EOF: return 0;
+
         case E_TOKEN_CONST:
         {
-            struct ast_decl decl;
-            ret = ast_parse_constant(&decl, stream);
-            if (ret < 0) { return ret; }
-            stream += ret;
-            break;
+            next             = calloc(1, sizeof(struct ast_parse_state));
+            next->prev_state = cur;
+
+            next->state = E_AST_PARSE_CONST_1;
+            *state      = next;
+            return 0;
         }
+        }
+        break;
+    }
+
+    case E_AST_PARSE_TYPE_ROOT:
+    {
+        if (stream->value != E_TOKEN_IDENT)
+        {
+            glc_log(
+              E_ERROR,
+              "Invalid Typename at %d:%d\n",
+              stream->debug_info.line,
+              stream->debug_info.column);
+            return E_AST_UNEXPECTED;
+        }
+
+        struct ast_type type;
+
+        size_t len    = strlen(stream->data.string);
+        type.typename = calloc(len + 1, sizeof(char));
+        strncpy((char *) type.typename, stream->data.string, len);
+
+        if (cur->prev_state == NULL)
+        {
+            glc_log(
+              E_ERROR,
+              "Invalid State! Type attached to no decl\n",
+              stream->debug_info.line,
+              stream->debug_info.column);
+            return E_AST_INVALIDSTATE;
+        }
+
+        switch (cur->prev_state->state)
+        {
         default:
+            glc_log(
+              E_ERROR,
+              "Invalid State! Type attached to no decl\n",
+              stream->debug_info.line,
+              stream->debug_info.column);
+            return E_AST_INVALIDSTATE;
+
+        case E_AST_PARSE_CONST_2:
+            *state = cur->prev_state;
+            free(cur);
+
+            (*state)->data.const_decl.type = type;
+            (*state)->state                = E_AST_PARSE_CONST_3;
+
+            return 0;
+        }
+
+        break;
+    }
+
+    case E_AST_PARSE_CONST_1:
+    {
+        if (stream->value != E_TOKEN_IDENT)
         {
             token_debug_str(token_buffer, sizeof(token_buffer), stream);
             glc_log(
               E_ERROR,
-              "Unexpected Token `%s` at %d:%d\n",
+              "Unexpected Token `%s` at %d:%d (expected 'Ident')\n",
               token_buffer,
               stream->debug_info.line,
               stream->debug_info.column);
             return E_AST_UNEXPECTED;
         }
+
+        size_t len                 = strlen(stream->data.string);
+        cur->data.const_decl.ident = calloc(len + 1, sizeof(char));
+        strncpy(cur->data.const_decl.ident, stream->data.string, len);
+
+        cur->state = E_AST_PARSE_CONST_2;
+        return 0;
+    }
+    case E_AST_PARSE_CONST_2:
+    {
+        if (stream->value != E_TOKEN_COLON)
+        {
+            token_debug_str(token_buffer, sizeof(token_buffer), stream);
+            glc_log(
+              E_ERROR,
+              "Unexpected Token `%s` at %d:%d (expected ':')\n",
+              token_buffer,
+              stream->debug_info.line,
+              stream->debug_info.column);
+            return E_AST_UNEXPECTED;
         }
+
+        next             = calloc(1, sizeof(struct ast_parse_state));
+        next->prev_state = cur;
+        next->state      = E_AST_PARSE_TYPE_ROOT;
+
+        *state = next;
+        return 0;
     }
 
-    return stream - start;
+    case E_AST_PARSE_CONST_3:
+    {
+        if (stream->value != E_TOKEN_EQUAL)
+        {
+            token_debug_str(token_buffer, sizeof(token_buffer), stream);
+            glc_log(
+              E_ERROR,
+              "Unexpected Token `%s` at %d:%d (expected '=')\n",
+              token_buffer,
+              stream->debug_info.line,
+              stream->debug_info.column);
+            return E_AST_UNEXPECTED;
+        }
+
+        next             = calloc(1, sizeof(struct ast_parse_state));
+        next->prev_state = cur;
+        next->state      = E_AST_PARSE_EXPR_ROOT;
+
+        *state = next;
+        return 0;
+    }
+    case E_AST_PARSE_CONST_4:
+    {
+        if (stream->value != E_TOKEN_SEMICOLON)
+        {
+            token_debug_str(token_buffer, sizeof(token_buffer), stream);
+            glc_log(
+              E_ERROR,
+              "Unexpected Token `%s` at %d:%d (expected ';')\n",
+              token_buffer,
+              stream->debug_info.line,
+              stream->debug_info.column);
+            return E_AST_UNEXPECTED;
+        }
+
+        // FIXME: Should probably be two different 'invalid states'
+        if (cur->prev_state == NULL || cur->prev_state->state != E_AST_PARSE_ROOT)
+        {
+            glc_log(
+              E_ERROR,
+              "Invalid State! Const closing from outside ParseRoot\n",
+              stream->debug_info.line,
+              stream->debug_info.column);
+            return E_AST_INVALIDSTATE;
+        }
+
+        struct ast_program *root = &(*state)->data.root;
+        ast_program_grow(root);
+
+        root->root_nodes[root->count++] = (struct ast_decl) { .type           = E_AST_DECL_CONST,
+                                                              .value.constant = {
+                                                                .ident = cur->data.const_decl.ident,
+                                                                .result = cur->data.const_decl.type,
+                                                                .value = cur->data.const_decl.value,
+                                                              } };
+
+        *state = cur->prev_state;
+        free(cur);
+
+        return 0;
+    }
+
+    case E_AST_PARSE_EXPR_ROOT:
+    {
+        glc_log(E_DEBUG, "Cool Expr Root Parsing Bro\n");
+        break;
+    }
+    }
+
+    // Unreachable error code
+    return -1;
+}
+
+/// Returns number of Tokens parsed, or negative for Error
+ptrdiff_t ast_parse_program(struct ast_program *result, struct token *stream)
+{
+    int                     ret;
+    struct ast_parse_state *state;
+
+    if (result == NULL || stream == NULL) { return E_AST_INVALIDINPUT; }
+
+    state  = calloc(1, sizeof(struct ast_parse_state));
+    *state = (struct ast_parse_state) {
+        .state      = E_AST_PARSE_ROOT,
+        .prev_state = NULL,
+        .data.root  = (struct ast_program) { .root_nodes =
+                                               calloc(PROGRAM_NODECAPACITY, sizeof(struct ast_decl)),
+                                             .capacity = PROGRAM_NODECAPACITY,
+                                             .count    = 0 },
+    };
+
+    while (stream->value != E_TOKEN_EOF)
+    {
+        memset(token_buffer, 0, sizeof(token_buffer));
+
+        ret = ast_parse_next(&state, stream);
+        if (ret < 0) { return ret; }
+
+        stream += 1;
+    }
+
+    if (state->prev_state != NULL)
+    {
+        glc_log(E_ERROR, "Unexpected EOF\n");
+        return E_AST_UNEXPECTED;
+    }
+
+    *result = state->data.root;
+    free(state);
+
+    return 0;
 }
