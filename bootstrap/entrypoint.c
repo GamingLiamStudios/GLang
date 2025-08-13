@@ -257,12 +257,7 @@ int main(const int argc, const char *const *argv)
     glc_log(E_DEBUG, "%lu Tokens\n", result);
 
     // Next step; Parsing
-    struct ast_program program = {
-        .capacity   = 0,
-        .count      = 0,
-        .root_nodes = NULL,
-    };
-    result = ast_parse_program(&program, stream);
+    result = glc_parse(stream);
     if (result < 0)
     {
         glc_log(E_ERROR, "Fatal Error! Exiting early...\n");
@@ -272,14 +267,8 @@ int main(const int argc, const char *const *argv)
         return -1;
     }
 
-    glc_log(E_DEBUG, "%lu Nodes\n", program.count);
-    for (size_t i = 0; i < program.count; i++)
-    {
-        struct ast_decl *node = program.root_nodes + i;
-        // TODO
-    }
+    glc_log(E_DEBUG, "Parsed!\n");
 
-    ast_program_free(&program);
     token_stream_free(&stream);
     fclose(input_file);
 }
