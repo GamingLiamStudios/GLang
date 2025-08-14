@@ -43,4 +43,37 @@ enum ast_parse_error
     E_AST_INVALIDSTATE,
 };
 
-int glc_parse(struct token *stream);
+struct glc_parse_expr
+{
+    enum
+    {
+        E_GLC_EXPR_INTEGER,
+        E_GLC_EXPR_IDENT,
+
+        E_GLC_EXPR_ADD,
+        E_GLC_EXPR_SUB,
+
+        E_GLC_EXPR_MUL,
+        E_GLC_EXPR_DIV,
+
+        E_GLC_EXPR_NOT,
+        E_GLC_EXPR_NEG,
+
+        E_GLC_EXPR_GT,
+        E_GLC_EXPR_LT,
+        E_GLC_EXPR_EQ,
+
+        E_GLC_EXPR_SCOPE
+    } type;
+
+    union
+    {
+        long  integer;
+        char *ident;
+
+        // Also used by scope
+        struct glc_parse_expr *children;
+    } value;
+};
+
+int glc_parse(struct glc_parse_expr *result, struct token *stream);
