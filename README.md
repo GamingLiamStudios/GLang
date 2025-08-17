@@ -2,7 +2,17 @@
 
 what.
 
-## Language Syntax
+## Purpose of subprojects
+
+### Parser Generator
+
+Exactly as you would think; to generate the parser for the bootstrap compiler.
+
+### Bootstrap
+
+A Minimal Implementation of the GLang Compiler, written in C. Should support the minimum amount of the language to compile the Self-Hosted Compiler.
+
+## Language Grammar
 
 ```txt
 IDENTIFIER ::= [_A-Za-z]* [_A-Za-z0-9]*

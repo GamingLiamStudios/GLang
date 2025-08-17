@@ -1,0 +1,26 @@
+Root ::= Expr $
+
+Expr ::= Equality
+Expr ::= Equality && Equality
+Expr ::= Equality || Equality
+
+Equality ::= Sum
+Equality ::= Sum > Sum
+Equality ::= Sum == Sum
+Equality ::= Sum < Sum
+
+Sum ::= Product
+Sum ::= Sum + Product
+Sum ::= Sum - Product
+
+Product ::= Unary
+Product ::= Product * Product
+Product ::= Product / Product
+
+Unary ::= Term
+Unary ::= ! Term
+Unary ::= - Term
+
+Term ::= Integer
+Term ::= Identifier
+Term ::= ( Expr )

@@ -289,7 +289,7 @@ struct glc_parse_state
     } type;
     union
     {
-        struct token token;
+        struct glcpg_token token;
 
         struct glc_parse_expr node;
     } value;
@@ -329,7 +329,7 @@ int __alloc_parse_stack(struct glc_parse_state **stack, size_t capacity)
     return 0;
 }
 
-int glc_parse(struct glc_parse_expr *result, struct token *stream)
+int glc_parse(struct glc_parse_expr *result, struct glcpg_token *stream)
 {
     struct glc_parse_state *state_stack;
     size_t                  capacity;
@@ -349,7 +349,7 @@ int glc_parse(struct glc_parse_expr *result, struct token *stream)
     // Init stack with EOF
     state_stack[0] = (struct glc_parse_state) { .state       = 0,
                                                 .type        = E_GLC_PARSE_TOKEN,
-                                                .value.token = (struct token) {
+                                                .value.token = (struct glcpg_token) {
                                                   .value = E_TOKEN_EOF,
                                                 } };
 
@@ -713,7 +713,7 @@ int glc_parse(struct glc_parse_expr *result, struct token *stream)
         }
         case 8:
         {
-            struct token tok;
+            struct glcpg_token tok;
 
             if (state_depth < 1 || head->type != E_GLC_PARSE_TOKEN)
             {
@@ -761,7 +761,7 @@ int glc_parse(struct glc_parse_expr *result, struct token *stream)
         }
         case 9:
         {
-            struct token tok;
+            struct glcpg_token tok;
 
             if (state_depth < 1 || head->type != E_GLC_PARSE_TOKEN)
             {

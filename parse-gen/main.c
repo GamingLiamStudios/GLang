@@ -1,85 +1,69 @@
-#include <stdio.h>
+// Sort of counterintuitively, but we generate a parser using a parser.
+#include "token.h"
+#include "log.h"
+#include "error.h"
+
 #include <string.h>
 #include <stdlib.h>
-#include <stdarg.h>
-#include <errno.h>
 
-#include "log.h"
-#include "ansi.h"
-#include "token.h"
-#include "tree.h"
+#define INPUTPATHS_GROWTHRATE   2
+#define INPUTPATHS_INITCAPACITY 1
 
 struct Options
 {
-    const char *input_paths;
-    const char *output_path;
-    int         verbosity;
+    const char **input_paths;
+    const char  *output_path;
 };
 
 struct Options opts = {
-    .verbosity   = E_INFO,
     .output_path = NULL,
     .input_paths = NULL,
 };
 
-void glc_log(enum LogLevel level, const char *restrict format, ...)
-{
-    if (level > opts.verbosity) return;
-
-    va_list args;
-    va_start(args, format);
-
-    switch (level)
-    {
-    case E_DEBUG:
-    {
-        fprintf(
-          stdout,
-          ANSI_FMT_BEGIN ANSI_FMT_COLOR_FG ANSI_FMT_COLOR_MAGENTA ANSI_FMT_END
-          "[DEBUG] " ANSI_FMT_RESET);
-        break;
-    }
-    case E_INFO:
-    {
-        fprintf(
-          stdout,
-          ANSI_FMT_BEGIN ANSI_FMT_COLOR_FG ANSI_FMT_COLOR_GREEN ANSI_FMT_END
-          "[INFO] " ANSI_FMT_RESET);
-        break;
-    }
-    case E_WARN:
-    {
-        fprintf(
-          stdout,
-          ANSI_FMT_BEGIN ANSI_FMT_COLOR_FG ANSI_FMT_COLOR_YELLOW ANSI_FMT_END
-          "[WARN] " ANSI_FMT_RESET);
-        break;
-    }
-    case E_ERROR:
-    {
-        fprintf(
-          stderr,
-          ANSI_FMT_BEGIN ANSI_FMT_COLOR_FG ANSI_FMT_COLOR_RED ANSI_FMT_END
-          "[ERROR] " ANSI_FMT_RESET);
-        vfprintf(stderr, format, args);
-        va_end(args);
-        return;
-    }
-    }
-
-    vfprintf(stdout, format, args);
-
-    va_end(args);
-}
+enum LogLevel verbosity;
 
 void help()
 {
-    fprintf(stdout, "USAGE: glc [options] -o OUTPUT_FILE input_file\n");
+    fprintf(stdout, "USAGE: glc_pg [options] -o OUTPUT_FILE input_files...\n");
+}
+
+int __alloc_input_paths(const char ***paths, size_t capacity)
+{
+    const char **newptr;
+    if (paths == NULL) { return E_GLCPG_INVALIDINPUT; }
+
+    if (capacity == 0)
+    {
+        free(*paths);
+        *paths = NULL;
+        return 0;
+    }
+
+    newptr = realloc(*paths, sizeof(const char **) * capacity);
+    if (newptr == NULL)
+    {
+        free(*paths);
+        *paths = NULL;
+        return E_GLCPG_MEMORYERROR;
+    }
+
+    *paths = newptr;
+    return 0;
 }
 
 int main(const int argc, const char *const *argv)
 {
     // Quick and dirty CLI
+    size_t num_paths;
+    size_t paths_capacity;
+    int    ret, index;
+
+    paths_capacity = INPUTPATHS_INITCAPACITY;
+    num_paths      = 0;
+    ret            = __alloc_input_paths(&opts.input_paths, paths_capacity);
+    if (ret < 0) { return ret; }
+
+    verbosity = E_INFO;
 
     if (argc == 1)
     {
@@ -88,7 +72,7 @@ int main(const int argc, const char *const *argv)
     }
 
     // Parse Input
-    int index = 0;
+    index = 0;
     while (++index < argc)
     {
         const char   *arg = argv[index];
@@ -97,12 +81,14 @@ int main(const int argc, const char *const *argv)
         if (arg[0] != '-')
         {
             // We don't have an option (must be input file)
-            if (opts.input_paths != NULL)
+            if (num_paths == paths_capacity)
             {
-                glc_log(E_ERROR, "Input File already specified (%s)\n", opts.input_paths);
-                return -1;
+                paths_capacity *= INPUTPATHS_GROWTHRATE;
+                ret = __alloc_input_paths(&opts.input_paths, paths_capacity);
+                if (ret < 0) { return ret; }
             }
-            opts.input_paths = arg;
+
+            opts.input_paths[num_paths++] = arg;
             continue;
         }
 
@@ -117,7 +103,7 @@ int main(const int argc, const char *const *argv)
                 {
                 case 'v':
                 {
-                    opts.verbosity++;
+                    verbosity++;
                     continue;
                 }
                 case 'o':
@@ -153,7 +139,7 @@ int main(const int argc, const char *const *argv)
 
             if (strncmp(opt, "version", 7) == 0)
             {
-                fprintf(stdout, "GLang Compiler - Bootstrapper\nVersion: 0.1.0\n");
+                fprintf(stdout, "GLang Parser Generator\nVersion: 0.1.0\n");
                 return 0;
             }
 
@@ -206,59 +192,18 @@ int main(const int argc, const char *const *argv)
         return -1;
     }
 
-    if (opts.input_paths == NULL)
+    if (opts.input_paths == NULL || num_paths == 0)
     {
         glc_log(E_ERROR, "Missing Input!\n");
         help();
         return -1;
     }
 
-    glc_log(E_DEBUG, "Verbosity: %d\n", opts.verbosity);
+    glc_log(E_DEBUG, "Verbosity: %d\n", verbosity);
     glc_log(E_DEBUG, "Output Path: %s\n", opts.output_path);
-    glc_log(E_DEBUG, "Input Path: %s\n", opts.input_paths);
+    glc_log(E_DEBUG, "Input Paths: \n");
 
-    // Compilation pipeline;
-    // Tokenization; Convert input file into stream of tokens
-    // Parsing; Parse stream of tokens into Abstract Syntax Tree
-    // Validation; Check AST contains valid code
-    // Compile; Generate LLVM IR from AST
+    for (size_t i = 0; i < num_paths; i++) { glc_log(E_DEBUG, "  - %s\n", opts.input_paths[i]); }
 
-    // First step in compiling; Tokenization
-    FILE *input_file = fopen(opts.input_paths, "r");
-    if (input_file == NULL)
-    {
-        glc_log(
-          E_ERROR,
-          "Error reading Input File (\"%s\"); %s\n",
-          opts.input_paths,
-          strerror(errno));
-        return errno;
-    }
-
-    struct glcpg_token *stream;
-    ptrdiff_t           result = tokenize_file(&stream, input_file);
-    switch (result)
-    {
-    case E_TOK_MEMORYERROR:
-    case E_TOK_IOERROR:
-    case E_TOK_INVALIDINPUT: fclose(input_file); return -1;
-    }
-
-    glc_log(E_DEBUG, "%lu Tokens\n", result);
-
-    // Next step; Parsing
-    result = glc_parse(stream);
-    if (result < 0)
-    {
-        glc_log(E_ERROR, "Fatal Error! Exiting early...\n");
-
-        token_stream_free(&stream);
-        fclose(input_file);
-        return -1;
-    }
-
-    glc_log(E_DEBUG, "Parsed!\n");
-
-    token_stream_free(&stream);
-    fclose(input_file);
+    free(opts.input_paths);
 }

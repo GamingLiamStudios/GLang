@@ -1,0 +1,9 @@
+#pragma once
+
+enum glcpg_error
+{
+    E_GLCPG_INVALIDINPUT = -127,
+    E_GLCPG_MEMORYERROR,
+    E_GLCPG_IOERROR,
+    E_GLCPG_NOTENOUGHSIZE,
+};

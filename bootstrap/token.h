@@ -8,7 +8,7 @@ struct debug_info
     int column;
 };
 
-struct token
+struct glcpg_token
 {
     enum
     {
@@ -106,10 +106,10 @@ enum token_error
     E_TOK_INVALIDINPUT,
 };
 
-void token_debug(FILE *file, struct token *tok);
-int  token_debug_str(char *string, size_t length, struct token *tok);
+void token_debug(FILE *file, struct glcpg_token *tok);
+int  token_debug_str(char *string, size_t length, struct glcpg_token *tok);
 
-ptrdiff_t tokenize_file(struct token **tokens, FILE *file);
-void      token_stream_free(struct token **tokens);
+ptrdiff_t tokenize_file(struct glcpg_token **tokens, FILE *file);
+void      token_stream_free(struct glcpg_token **tokens);
 
-size_t token_stream_len(struct token *tokens);
+size_t token_stream_len(struct glcpg_token *tokens);

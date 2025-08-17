@@ -12,9 +12,9 @@
 
 #define TOKENBUFFER_SIZE 1024
 
-void token_stream_free(struct token **stream)
+void token_stream_free(struct glcpg_token **stream)
 {
-    struct token *next;
+    struct glcpg_token *next;
 
     if (stream == NULL || *stream == NULL) { return; }
 
@@ -34,7 +34,7 @@ void token_stream_free(struct token **stream)
     *stream = NULL;
 }
 
-void token_debug(FILE *restrict file, struct token *restrict tok)
+void token_debug(FILE *restrict file, struct glcpg_token *restrict tok)
 {
     if (file == NULL || tok == NULL) { return; }
     switch (tok->value)
@@ -49,7 +49,7 @@ void token_debug(FILE *restrict file, struct token *restrict tok)
     printf("Unknown(%d)", tok->value);
 }
 
-int token_debug_str(char *restrict string, size_t length, struct token *restrict tok)
+int token_debug_str(char *restrict string, size_t length, struct glcpg_token *restrict tok)
 {
     if (string == NULL || tok == NULL || length == 0) { return 0; }
     switch (tok->value)
@@ -64,9 +64,9 @@ int token_debug_str(char *restrict string, size_t length, struct token *restrict
     snprintf(string, length, "Unknown(%d)", tok->value);
 }
 
-size_t token_stream_len(struct token *tokens)
+size_t token_stream_len(struct glcpg_token *tokens)
 {
-    struct token *start;
+    struct glcpg_token *start;
 
     if (tokens == NULL) { return 0; }
 
@@ -75,7 +75,7 @@ size_t token_stream_len(struct token *tokens)
     return tokens - start;
 }
 
-ptrdiff_t tokenize_file(struct token **result, FILE *file)
+ptrdiff_t tokenize_file(struct glcpg_token **result, FILE *file)
 {
     if (result == NULL) { return E_TOK_INVALIDINPUT; }
 
@@ -84,11 +84,11 @@ ptrdiff_t tokenize_file(struct token **result, FILE *file)
     struct debug_info debug_info;
     char              c, prev;
 
-    struct token *stream;
-    size_t        capacity;
+    struct glcpg_token *stream;
+    size_t              capacity;
 
     // Create initial token stream
-    *result = calloc(TOKENSTREAM_CAPACITY, sizeof(struct token));
+    *result = calloc(TOKENSTREAM_CAPACITY, sizeof(struct glcpg_token));
 
     stream   = *result;
     capacity = TOKENSTREAM_CAPACITY;
@@ -277,7 +277,7 @@ ptrdiff_t tokenize_file(struct token **result, FILE *file)
 
             ptrdiff_t len = stream - *result;
 
-            struct token *resized = realloc(*result, sizeof(struct token) * capacity);
+            struct glcpg_token *resized = realloc(*result, sizeof(struct glcpg_token) * capacity);
             if (resized == NULL)
             {
                 token_stream_free(result);
@@ -446,7 +446,7 @@ ptrdiff_t tokenize_file(struct token **result, FILE *file)
 
         ptrdiff_t len = stream - *result;
 
-        struct token *resized = realloc(*result, sizeof(struct token) * capacity);
+        struct glcpg_token *resized = realloc(*result, sizeof(struct glcpg_token) * capacity);
         if (resized == NULL)
         {
             token_stream_free(result);

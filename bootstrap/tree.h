@@ -76,4 +76,4 @@ struct glc_parse_expr
     } value;
 };
 
-int glc_parse(struct glc_parse_expr *result, struct token *stream);
+int glc_parse(struct glc_parse_expr *result, struct glcpg_token *stream);
