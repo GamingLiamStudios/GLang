@@ -10,6 +10,7 @@ struct glcpg_item
     {
         E_GLCPG_TERMINAL,
         E_GLCPG_NONTERMINAL,
+        // E_GLCPG_EOF,
     } type;
 
     const char *value;

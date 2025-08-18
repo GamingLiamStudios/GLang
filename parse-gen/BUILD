@@ -10,6 +10,8 @@ cc_binary(
         "log.c",
         "log.h",
         "main.c",
+        "table.c",
+        "table.h",
         "token.c",
         "token.h",
         "tree.c",

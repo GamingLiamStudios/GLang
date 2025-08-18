@@ -1,5 +1,6 @@
 #pragma once
 
+// FIXME: More descriptive errors
 enum glcpg_error
 {
     E_GLCPG_INVALIDINPUT = -127,

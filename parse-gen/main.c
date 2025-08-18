@@ -3,6 +3,7 @@
 #include "log.h"
 #include "error.h"
 #include "tree.h"
+#include "table.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -274,16 +275,27 @@ int main(const int argc, char *const *argv)
 
     glcpg_grammar_classify(&grammar);
 
-    glc_log(E_DEBUG, "Num Nonterminals: %d\n", grammar.num_nonterminals);
-    for (size_t i = 0; i < grammar.num_nonterminals; i++)
+    // glc_log(E_DEBUG, "Num Nonterminals: %d\n", grammar.num_nonterminals);
+    // for (size_t i = 0; i < grammar.num_nonterminals; i++)
+    //{
+    //     glc_log(
+    //       E_DEBUG,
+    //       "  - %s: %d\n",
+    //       grammar.nonterminals[i].name,
+    //       grammar.nonterminals[i].num_rules);
+    // }
+
+    struct glcpg_table table;
+    ret = glcpg_table_create(&table, 1, &grammar);
+    if (ret < 0)
     {
-        glc_log(
-          E_DEBUG,
-          "  - %s: %d\n",
-          grammar.nonterminals[i].name,
-          grammar.nonterminals[i].num_rules);
+        glcpg_grammar_free(&grammar);
+        free(opts.input_paths);
+        return ret;
     }
 
+    ret = 0;
     glcpg_grammar_free(&grammar);
     free(opts.input_paths);
+    return ret;
 }

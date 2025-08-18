@@ -21,6 +21,6 @@ Unary ::= Term
 Unary ::= ! Term
 Unary ::= - Term
 
-Term ::= Integer
-Term ::= Identifier
+Term ::= INT
+Term ::= IDENT
 Term ::= ( Expr )
