@@ -25,12 +25,7 @@ int __alloc_token_stream(struct glcpg_token **stream, size_t capacity)
     }
 
     newptr = realloc(*stream, sizeof(struct glcpg_token) * capacity);
-    if (newptr == NULL)
-    {
-        free(*stream);
-        *stream = NULL;
-        return E_GLCPG_MEMORYERROR;
-    }
+    if (newptr == NULL) { return E_GLCPG_MEMORYERROR; }
 
     *stream = newptr;
     return 0;
@@ -38,36 +33,40 @@ int __alloc_token_stream(struct glcpg_token **stream, size_t capacity)
 
 int glcpg_token_debug(char *restrict string, size_t maxlen, const struct glcpg_token token)
 {
-    int ret;
+    int ret = 0;
     if (string == NULL && maxlen != 0) { return E_GLCPG_INVALIDINPUT; }
 
     switch (token.type)
     {
     case E_PGTOK_EOF: ret = snprintf(string, maxlen, "EOF"); break;
+    case E_PGTOK_EOL: ret = snprintf(string, maxlen, "EOL"); break;
     case E_PGTOK_EQUAL: ret = snprintf(string, maxlen, "EQ"); break;
     case E_PGTOK_IDENT: ret = snprintf(string, maxlen, "Ident(%s)", token.value.ident); break;
-    case E_PGTOK_TERMINAL:
-        ret = snprintf(string, maxlen, "Terminal(%s)", token.value.terminal.name);
-        break;
     }
 
     return ret;
 }
 
-ptrdiff_t glcpg_lexer_file(
-  struct glcpg_token *restrict *result,
-  FILE                         *file,
-  const struct glcpg_terminal *restrict const terminals,
-  size_t num_terminals)
+void glcpg_token_free(struct glcpg_token *token)
+{
+    if (token == NULL) { return; }
+
+    switch (token->type)
+    {
+    case E_PGTOK_IDENT: free((char *) token->value.ident);
+    default: return;
+    }
+}
+
+ptrdiff_t glcpg_lexer_file(struct glcpg_token *restrict *result, FILE *restrict file)
 {
     // TODO: Heap Allocate instead of Stack
     char                cur, current_string[1024];
-    struct glcpg_token *stream;
+    struct glcpg_token *stream = NULL;
     size_t              capacity, num_elems, cur_len;
     int                 ret;
 
     if (result == NULL) { return E_GLCPG_INVALIDINPUT; }
-    memset(current_string, 0, sizeof(current_string));
 
     num_elems = 0;
     capacity  = TOKENSTREAM_INITCAPACITY;
@@ -81,50 +80,46 @@ ptrdiff_t glcpg_lexer_file(
         if (cur == EOF && !feof(file))
         {
             glc_log(E_ERROR, "Error while reading file: %s\n", strerror(errno));
+            for (size_t i = 0; i < num_elems; i++) glcpg_token_free(stream + i);
+            free(stream);
             return E_GLCPG_IOERROR;
         }
 
-        if (capacity == num_elems)
+        if (capacity - 1 == num_elems)
         {
             capacity *= TOKENSTREAM_GROWTHFACTOR;
             ret = __alloc_token_stream(&stream, capacity);
-            if (ret < 0) { return ret; }
+            if (ret < 0)
+            {
+                for (size_t i = 0; i < num_elems; i++) glcpg_token_free(stream + i);
+                free(stream);
+                return ret;
+            }
         }
 
-        if (isspace(cur) || cur == EOF)
+        if (isspace(cur) || cur == EOF || cur == '\n')
         {
             if (3 == cur_len && strncmp(current_string, "::=", 3) == 0)
             {
                 stream[num_elems].type = E_PGTOK_EQUAL;
                 num_elems += 1;
                 cur_len = 0;
-                continue;
             }
-
-            for (size_t i = 0; i < num_terminals; i++)
+            else
             {
-                const struct glcpg_terminal terminal = terminals[i];
-                size_t                      len      = strlen(terminal.value);
-
-                if (len == cur_len && strncmp(current_string, terminal.value, cur_len) == 0)
+                if (cur_len > 0)
                 {
-                    stream[num_elems].type           = E_PGTOK_TERMINAL;
-                    stream[num_elems].value.terminal = terminal;
+                    stream[num_elems].type        = E_PGTOK_IDENT;
+                    stream[num_elems].value.ident = calloc(cur_len + 1, sizeof(char));
+                    strncpy((char *) stream[num_elems].value.ident, current_string, cur_len);
 
                     num_elems += 1;
                     cur_len = 0;
-                    continue;
                 }
+
+                if (cur == '\n') { stream[num_elems++].type = E_PGTOK_EOL; }
+                if (cur == EOF) { break; }
             }
-
-            stream[num_elems].type        = E_PGTOK_IDENT;
-            stream[num_elems].value.ident = calloc(cur_len + 1, sizeof(char));
-            strncpy((char *) stream[num_elems].value.ident, current_string, cur_len);
-
-            num_elems += 1;
-            cur_len = 0;
-
-            if (cur == EOF) { break; }
         }
         else { current_string[cur_len++] = cur; }
     }
@@ -132,7 +127,13 @@ ptrdiff_t glcpg_lexer_file(
     // shrink to fit
     stream[num_elems++].type = E_PGTOK_EOF;
     ret                      = __alloc_token_stream(&stream, num_elems);
-    if (ret < 0) { return ret; }
+    if (ret < 0)
+    {
+        for (size_t i = 0; i < num_elems; i++) glcpg_token_free(stream + i);
+        free(stream);
+        return ret;
+    }
 
+    *result = stream;
     return num_elems;
 }

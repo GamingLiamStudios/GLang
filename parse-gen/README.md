@@ -7,7 +7,7 @@
 ```txt
 Root ::= (Rule)* EOF
 
-Rule ::= IDENT '::=' (Terminal | NonTerminal)+
+Rule ::= IDENT '::=' (Terminal | NonTerminal)+ \n
 
 Terminal ::= STRING
 NonTerminal ::= IDENT

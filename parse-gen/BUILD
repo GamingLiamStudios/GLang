@@ -12,6 +12,8 @@ cc_binary(
         "main.c",
         "token.c",
         "token.h",
+        "tree.c",
+        "tree.h",
     ],
     copts = [
         "-std=c11",

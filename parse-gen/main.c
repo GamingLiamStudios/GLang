@@ -2,12 +2,17 @@
 #include "token.h"
 #include "log.h"
 #include "error.h"
+#include "tree.h"
 
 #include <string.h>
 #include <stdlib.h>
+#include <errno.h>
 
 #define INPUTPATHS_GROWTHRATE   2
 #define INPUTPATHS_INITCAPACITY 1
+
+#define TERMINALS_GROWTHRATE   2
+#define TERMINALS_INITCAPACITY 8
 
 struct Options
 {
@@ -51,12 +56,13 @@ int __alloc_input_paths(const char ***paths, size_t capacity)
     return 0;
 }
 
-int main(const int argc, const char *const *argv)
+int main(const int argc, char *const *argv)
 {
     // Quick and dirty CLI
-    size_t num_paths;
-    size_t paths_capacity;
-    int    ret, index;
+    size_t    num_paths;
+    size_t    paths_capacity;
+    int       index;
+    ptrdiff_t ret;
 
     paths_capacity = INPUTPATHS_INITCAPACITY;
     num_paths      = 0;
@@ -202,8 +208,82 @@ int main(const int argc, const char *const *argv)
     glc_log(E_DEBUG, "Verbosity: %d\n", verbosity);
     glc_log(E_DEBUG, "Output Path: %s\n", opts.output_path);
     glc_log(E_DEBUG, "Input Paths: \n");
-
     for (size_t i = 0; i < num_paths; i++) { glc_log(E_DEBUG, "  - %s\n", opts.input_paths[i]); }
 
+    struct glcpg_grammar grammar = {
+        .num_nonterminals = 0,
+        .num_items        = 0,
+        .items            = NULL,
+        .nonterminals     = NULL,
+    };
+    for (size_t i = 0; i < num_paths; i++)
+    {
+        // First, tokenize all the files
+        FILE *file = fopen(opts.input_paths[i], "r");
+        if (file == NULL)
+        {
+            glc_log(
+              E_ERROR,
+              "Error while opening file '%s': %s\n",
+              opts.input_paths[i],
+              strerror(errno));
+
+            free(opts.input_paths);
+            return E_GLCPG_IOERROR;
+        }
+
+        struct glcpg_token *tokens;
+        ptrdiff_t           len = glcpg_lexer_file(&tokens, file);
+        if (len < 0)
+        {
+            fclose(file);
+            free(opts.input_paths);
+            return ret;
+        }
+
+        struct glcpg_grammar file_grammar;
+        ret = glcpg_parse(&file_grammar, tokens);
+        if (ret < 0)
+        {
+            fclose(file);
+            free(opts.input_paths);
+            return ret;
+        }
+
+        ret = glcpg_grammar_merge(&grammar, &file_grammar);
+        if (ret < 0)
+        {
+            struct glcpg_token *start = tokens, tok;
+            while ((tok = *(tokens++)).type != E_PGTOK_EOF) { glcpg_token_free(&tok); }
+            free(start);
+
+            fclose(file);
+            free(opts.input_paths);
+            return ret;
+        }
+
+        glcpg_grammar_free(&file_grammar);
+
+        // god i miss destructors
+        struct glcpg_token *start = tokens, tok;
+        while ((tok = *(tokens++)).type != E_PGTOK_EOF) { glcpg_token_free(&tok); }
+        free(start);
+
+        fclose(file);
+    }
+
+    glcpg_grammar_classify(&grammar);
+
+    glc_log(E_DEBUG, "Num Nonterminals: %d\n", grammar.num_nonterminals);
+    for (size_t i = 0; i < grammar.num_nonterminals; i++)
+    {
+        glc_log(
+          E_DEBUG,
+          "  - %s: %d\n",
+          grammar.nonterminals[i].name,
+          grammar.nonterminals[i].num_rules);
+    }
+
+    glcpg_grammar_free(&grammar);
     free(opts.input_paths);
 }

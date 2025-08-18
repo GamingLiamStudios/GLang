@@ -2,28 +2,20 @@
 #include <stdio.h>
 #include <stddef.h>
 
-struct glcpg_terminal
-{
-    const char *name;
-    const char *value;
-};
-
 struct glcpg_token
 {
     enum
     {
         E_PGTOK_EOF = 0,
+        E_PGTOK_EOL,
 
         E_PGTOK_IDENT,
-        E_PGTOK_TERMINAL,
         E_PGTOK_EQUAL,
     } type;
 
     union
     {
-        // Used by; Ident
-        const char           *ident;
-        struct glcpg_terminal terminal;
+        const char *ident;
     } value;
 };
 
@@ -33,8 +25,6 @@ struct glcpg_token
 int glcpg_token_debug(char *restrict string, size_t maxlen, const struct glcpg_token token);
 
 /// Returns number of tokens parsed, or negative for error
-ptrdiff_t glcpg_lexer_file(
-  struct glcpg_token *restrict *result,
-  FILE                         *file,
-  const struct glcpg_terminal *restrict const terminals,
-  size_t num_terminals);
+ptrdiff_t glcpg_lexer_file(struct glcpg_token *restrict *result, FILE *file);
+
+void glcpg_token_free(struct glcpg_token *token);
