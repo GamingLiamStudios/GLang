@@ -8,9 +8,9 @@ struct glcpg_item
 {
     enum
     {
-        E_GLCPG_TERMINAL,
-        E_GLCPG_NONTERMINAL,
-        // E_GLCPG_EOF,
+        E_PGITM_TERMINAL,
+        E_PGITM_NONTERMINAL,
+        E_PGITM_EOF,
     } type;
 
     const char *value;

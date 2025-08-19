@@ -1,5 +1,3 @@
-Root ::= Expr $
-
 Expr ::= Equality
 Expr ::= Equality && Equality
 Expr ::= Equality || Equality

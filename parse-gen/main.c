@@ -286,7 +286,7 @@ int main(const int argc, char *const *argv)
     // }
 
     struct glcpg_table table;
-    ret = glcpg_table_create(&table, 1, &grammar);
+    ret = glcpg_table_create(&table, "Expr", &grammar);
     if (ret < 0)
     {
         glcpg_grammar_free(&grammar);

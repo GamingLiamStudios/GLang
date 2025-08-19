@@ -85,6 +85,30 @@ int __alloc_items2(struct glcpg_item **ptr, size_t capacity)
     return 0;
 }
 
+int __alloc_lritems(struct glcpg_lritem **ptr, size_t capacity)
+{
+    struct glcpg_lritem *newptr;
+    if (ptr == NULL) { return E_GLCPG_INVALIDINPUT; }
+
+    if (capacity == 0)
+    {
+        free(*ptr);
+        *ptr = NULL;
+        return 0;
+    }
+
+    newptr = realloc(*ptr, sizeof(struct glcpg_lritem) * capacity);
+    if (newptr == NULL)
+    {
+        free(*ptr);
+        *ptr = NULL;
+        return E_GLCPG_MEMORYERROR;
+    }
+
+    *ptr = newptr;
+    return 0;
+}
+
 int __compare_parseitem(
   struct glcpg_parseitem_0 *lhs,
   struct glcpg_parseitem_0 *rhs,
@@ -136,6 +160,21 @@ void __debug_firstset(struct glcpg_firstset *set)
     }
 }
 
+void __debug_lritem(struct glcpg_lritem *item, struct glcpg_grammar *grammar)
+{
+    glc_log(E_DEBUG, "%s ::=", item->key);
+    for (size_t i = 0; i < item->rule.num_items; i++)
+    {
+        ptrdiff_t idx = item->rule.item[i];
+        printf(" %s", grammar->items[idx].value);
+    }
+
+    printf(" {");
+    for (size_t i = 0; i < item->num_follow; i++) { printf(" %s", item->follow[i].value); }
+
+    printf(" }\n");
+}
+
 int __close_itemset(struct glcpg_itemset_0 *result, struct glcpg_grammar *grammar)
 {
     int    ret, updated;
@@ -170,7 +209,7 @@ int __close_itemset(struct glcpg_itemset_0 *result, struct glcpg_grammar *gramma
             ptrdiff_t         lookahead = itm->rule.item[itm->parse_idx];
             struct glcpg_item la_itm    = grammar->items[lookahead];
 
-            if (la_itm.type == E_GLCPG_NONTERMINAL)
+            if (la_itm.type == E_PGITM_NONTERMINAL)
             {
                 struct glcpg_ruletable *nt = NULL;
                 for (size_t j = 0; j < grammar->num_nonterminals; j++)
@@ -272,7 +311,7 @@ int __compute_first_set(struct glcpg_firstset **result, struct glcpg_grammar *gr
             size_t setcount = set->count;
             for (size_t j = 0; j < setcount; j++)
             {
-                if (set->first[j].type != E_GLCPG_NONTERMINAL) { continue; }
+                if (set->first[j].type != E_PGITM_NONTERMINAL) { continue; }
 
                 // Self-Lookup for insertion values
                 struct glcpg_firstset *target = NULL;
@@ -322,9 +361,7 @@ int __compute_first_set(struct glcpg_firstset **result, struct glcpg_grammar *gr
 
         for (ptrdiff_t j = set->count - 1; j >= 0; j--)
         {
-            if (set->first[j].type == E_GLCPG_TERMINAL) continue;
-
-            printf("Removing item %s\n", set->first[j].value);
+            if (set->first[j].type == E_PGITM_TERMINAL) continue;
 
             // Shift array back one element
             memmove(
@@ -343,37 +380,211 @@ int __compute_first_set(struct glcpg_firstset **result, struct glcpg_grammar *gr
     return grammar->num_nonterminals;
 }
 
-ptrdiff_t
-  glcpg_table_create(struct glcpg_table *result, size_t lookahead, struct glcpg_grammar *grammar)
+ptrdiff_t __close_lritemset(
+  struct glcpg_lritem  **state_k,
+  size_t                 size,
+  struct glcpg_grammar  *grammar,
+  struct glcpg_firstset *firstset)
 {
-    size_t                  itemset_capacity;
-    size_t                  num_itemsets;
-    struct glcpg_itemset_0 *itemsets;
+    int    ret;
+    size_t capacity = size;
 
+    if (state_k == NULL || *state_k == NULL || size == 0 || grammar == NULL || firstset == NULL)
+    {
+        return E_GLCPG_INVALIDINPUT;
+    }
+
+    // Closure;
+    // [A → α • B β, a]
+    // [B → • γ, b], b ∈ FIRST(βa)
+
+    ptrdiff_t processed = 0;
+    while (processed < size)
+    {
+        size_t prev_state0_size = size;
+        for (; processed < prev_state0_size; processed++)
+        {
+            struct glcpg_lritem *state = *state_k + processed;
+
+            ptrdiff_t          idx  = state->rule.item[state->parse_idx];
+            struct glcpg_item *next = grammar->items + idx;
+
+            if (next->type != E_PGITM_NONTERMINAL)
+            {
+                // Rule cannot be expanded further
+                continue;
+            }
+
+            struct glcpg_ruletable *nt = NULL;
+            for (size_t i = 0; i < grammar->num_nonterminals; i++)
+            {
+                if (strcmp(grammar->nonterminals[i].name, next->value) == 0)
+                {
+                    nt = grammar->nonterminals + i;
+                    break;
+                }
+            }
+
+            if (nt == NULL)
+            {
+                glc_log(E_WARN, "NonTerminal '%s' doesn't exist\n", next->value);
+                continue;
+            }
+
+            for (size_t i = 0; i < nt->num_rules; i++)
+            {
+                struct glcpg_parseitem_0 cmp = {
+                    .parse_idx = 0,
+                    .result    = nt->name,
+                    .rule      = nt->rules[i],
+                };
+
+                // Search current processed list for definitions of next
+                struct glcpg_lritem *existing = NULL;
+                for (size_t j = 0; j < size; j++)
+                {
+                    struct glcpg_lritem *lookup = *state_k + j;
+                    if (__compare_parseitem(
+                          &(struct glcpg_parseitem_0) {
+                            .parse_idx = lookup->parse_idx,
+                            .result    = lookup->key,
+                            .rule      = lookup->rule,
+                          },
+                          &cmp,
+                          grammar))
+                    {
+                        existing = lookup;
+                        break;
+                    }
+                }
+
+                struct glcpg_item *follows;
+                size_t             num_follows;
+
+                if (state->parse_idx + 1 >= state->rule.num_items)
+                {
+                    // Propagate input follows
+                    num_follows = state->num_follow;
+                    follows     = state->follow;
+                }
+                else
+                {
+                    // Use next token directly
+                    idx                          = state->rule.item[state->parse_idx + 1];
+                    struct glcpg_item *lookahead = grammar->items + idx;
+
+                    if (lookahead->type == E_PGITM_NONTERMINAL)
+                    {
+                        // Find next in firstset
+                        struct glcpg_firstset *first_next = NULL;
+                        for (size_t j = 0; j < grammar->num_nonterminals; j++)
+                        {
+                            if (strcmp(firstset[j].key, lookahead->value) == 0)
+                            {
+                                first_next = firstset + j;
+                                break;
+                            }
+                        }
+
+                        if (first_next == NULL)
+                        {
+                            glc_log(
+                              E_ERROR,
+                              "FirstSet doesn't exist for NonTerminal '%s'\n",
+                              lookahead->value);
+                            return E_GLCPG_UNEXPECTED;
+                        }
+
+                        // Copy firstset into follow
+                        num_follows = first_next->count;
+                        follows     = first_next->first;
+                    }
+                    else
+                    {
+                        num_follows = 1;
+                        follows     = lookahead;
+                    }
+                }
+
+                if (existing == NULL)
+                {
+                    // Rule not added; Push to state
+                    if (capacity == size)
+                    {
+                        capacity *= 2;
+                        ret = __alloc_lritems(state_k, capacity);
+                        if (ret < 0) { return ret; }
+
+                        state = *state_k + processed;
+                    }
+
+                    struct glcpg_lritem item;
+
+                    item.key       = nt->name;
+                    item.rule      = nt->rules[i];
+                    item.parse_idx = 0;
+
+                    item.num_follow = num_follows;
+                    item.follow     = calloc(num_follows, sizeof(struct glcpg_item));
+                    memcpy(item.follow, follows, num_follows * sizeof(struct glcpg_item));
+
+                    (*state_k)[size++] = item;
+                    continue;
+                }
+
+                // Rule exists; Append follows onto existing rule state
+                ret = __alloc_items2(&existing->follow, existing->num_follow + num_follows);
+                if (ret < 0) { return ret; }
+                memcpy(
+                  existing->follow + existing->num_follow,
+                  follows,
+                  num_follows * sizeof(struct glcpg_item));
+                existing->num_follow += num_follows;
+            }
+        }
+    }
+
+    // Shrink to fit
+    ret = __alloc_lritems(state_k, size);
+    if (ret < 0) { return ret; }
+
+    return size;
+}
+
+ptrdiff_t glcpg_table_create(
+  struct glcpg_table   *result,
+  const char           *root_node,
+  struct glcpg_grammar *grammar)
+{
     int ret;
 
     if (result == NULL || grammar == NULL) { return E_GLCPG_INVALIDINPUT; }
 
     // Find Root Node
     struct glcpg_ruletable *root = NULL;
-    for (size_t root_idx = 0; root_idx < grammar->num_nonterminals; root_idx++)
+    for (size_t i = 0; i < grammar->num_nonterminals; i++)
     {
-        if (strcmp(grammar->nonterminals[root_idx].name, "Root") == 0)
+        if (strcmp(grammar->nonterminals[i].name, root_node) == 0)
         {
-            root = grammar->nonterminals + root_idx;
+            root = grammar->nonterminals + i;
             break;
         }
     }
     if (root == NULL)
     {
-        glc_log(E_ERROR, "Grammar missing 'Root' node\n");
-        return E_GLCPG_UNEXPECTED;
+        glc_log(E_ERROR, "Grammar missing Root NonTerminal '%s'\n", root_node);
+        return E_GLCPG_INVALIDINPUT;
     }
 
-    if (root->num_rules != 1)
+    ptrdiff_t root_idx;
+    for (root_idx = 0; root_idx < grammar->num_items; root_idx++)
     {
-        glc_log(E_ERROR, "'Root' node too large\n");
-        return E_GLCPG_UNEXPECTED;
+        if (strcmp(grammar->items[root_idx].value, root_node) == 0) { break; }
+    }
+    if (root_idx >= grammar->num_items)
+    {
+        glc_log(E_ERROR, "Grammar missing Root Item '%s'\n", root_node);
+        return E_GLCPG_INVALIDINPUT;
     }
 
     struct glcpg_firstset *firstset = NULL;
@@ -382,28 +593,30 @@ ptrdiff_t
 
     for (size_t i = 0; i < ret; i++) { __debug_firstset(firstset + i); }
 
-    itemsets         = NULL;
-    itemset_capacity = ITEMSETS_INITCAPACITY;
-    ret              = __alloc_lr0_itemsets(&itemsets, itemset_capacity);
+    // Build state 0
+    struct glcpg_lritem *state0 = NULL;
+    ret                         = __alloc_lritems(&state0, 1);
     if (ret < 0) { return ret; }
 
-    struct glcpg_itemset_0 root_itemset = {
-        .items     = NULL,
+    state0[0].key  = "";
+    state0[0].rule = (struct glcpg_rule) {
         .num_items = 1,
+        .item      = &root_idx,
     };
-    ret = __alloc_parseitems(&root_itemset.items, 1);
 
-    root_itemset.items[0].parse_idx = 0;
-    root_itemset.items[0].rule      = root->rules[0];
-    root_itemset.items[0].result    = root->name;
-
-    ret = __close_itemset(&root_itemset, grammar);
+    state0[0].parse_idx  = 0;
+    state0[0].num_follow = 1;
+    state0[0].follow     = NULL;
+    ret                  = __alloc_items2(&state0[0].follow, 1);
     if (ret < 0) { return ret; }
 
-    __debug_itemset(&root_itemset, grammar);
+    state0[0].follow[0].type = E_PGITM_EOF;
 
-    // ret = __close_itemset(&itemsets[0], grammar);
-    // if (ret < 0) { return ret; }
+    ret = __close_lritemset(&state0, 1, grammar, firstset);
+    if (ret < 0) { return ret; }
+    size_t state0_size = ret;
+
+    for (size_t i = 0; i < state0_size; i++) { __debug_lritem(state0 + i, grammar); }
 
     return 0;
 }

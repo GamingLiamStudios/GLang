@@ -184,7 +184,7 @@ ptrdiff_t __parse_rule(
 
         if (itm == NULL)
         {
-            (*items)[*items_count].type = E_GLCPG_TERMINAL;
+            (*items)[*items_count].type = E_PGITM_TERMINAL;
 
             size_t len                   = strlen(cur->value.ident);
             (*items)[*items_count].value = calloc(len + 1, sizeof(char));
@@ -297,7 +297,7 @@ int glcpg_parse(struct glcpg_grammar *result, struct glcpg_token *tokens)
 
 void glcpg_grammar_classify(struct glcpg_grammar *target)
 {
-    for (size_t i = 0; i < target->num_items; i++) { target->items[i].type = E_GLCPG_TERMINAL; }
+    for (size_t i = 0; i < target->num_items; i++) { target->items[i].type = E_PGITM_TERMINAL; }
 
     for (size_t j = 0; j < target->num_nonterminals; j++)
     {
@@ -322,7 +322,7 @@ void glcpg_grammar_classify(struct glcpg_grammar *target)
             }
             continue;
         }
-        itm->type = E_GLCPG_NONTERMINAL;
+        itm->type = E_PGITM_NONTERMINAL;
     }
 }
 
