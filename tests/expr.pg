@@ -1,6 +1,6 @@
 Expr ::= Equality
-Expr ::= Equality && Equality
-Expr ::= Equality || Equality
+Expr ::= Expr && Equality
+Expr ::= Expr || Equality
 
 Equality ::= Sum
 Equality ::= Sum > Sum
@@ -12,8 +12,8 @@ Sum ::= Sum + Product
 Sum ::= Sum - Product
 
 Product ::= Unary
-Product ::= Product * Product
-Product ::= Product / Product
+Product ::= Product * Unary
+Product ::= Product / Unary
 
 Unary ::= Term
 Unary ::= ! Term

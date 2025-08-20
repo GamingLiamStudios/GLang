@@ -398,11 +398,12 @@ ptrdiff_t __close_lritemset(
     // [A → α • B β, a]
     // [B → • γ, b], b ∈ FIRST(βa)
 
-    ptrdiff_t processed = 0;
-    while (processed < size)
+    int updated = 1;
+    while (updated)
     {
+        updated                 = 0;
         size_t prev_state0_size = size;
-        for (; processed < prev_state0_size; processed++)
+        for (size_t processed = 0; processed < prev_state0_size; processed++)
         {
             struct glcpg_lritem *state = *state_k + processed;
 
@@ -529,17 +530,40 @@ ptrdiff_t __close_lritemset(
                     memcpy(item.follow, follows, num_follows * sizeof(struct glcpg_item));
 
                     (*state_k)[size++] = item;
+                    updated            = 1;
                     continue;
                 }
 
                 // Rule exists; Append follows onto existing rule state
                 ret = __alloc_items2(&existing->follow, existing->num_follow + num_follows);
                 if (ret < 0) { return ret; }
-                memcpy(
-                  existing->follow + existing->num_follow,
-                  follows,
-                  num_follows * sizeof(struct glcpg_item));
-                existing->num_follow += num_follows;
+
+                for (size_t j = 0; j < num_follows; j++)
+                {
+                    size_t k;
+                    for (k = 0; k < existing->num_follow; k++)
+                    {
+                        if (existing->follow[k].type == follows[j].type)
+                        {
+                            if (
+                              existing->follow[k].type != E_PGITM_EOF &&
+                              follows[j].type != E_PGITM_EOF)
+                            {
+                                if (strcmp(existing->follow[k].value, follows[j].value) == 0) break;
+                            }
+                            else { break; }
+                        }
+                    }
+
+                    if (k >= existing->num_follow)
+                    {
+                        existing->follow[existing->num_follow++] = follows[j];
+                        updated                                  = 1;
+                    }
+                }
+
+                ret = __alloc_items2(&existing->follow, existing->num_follow);
+                if (ret < 0) { return ret; }
             }
         }
     }
@@ -617,6 +641,42 @@ ptrdiff_t glcpg_table_create(
     size_t state0_size = ret;
 
     for (size_t i = 0; i < state0_size; i++) { __debug_lritem(state0 + i, grammar); }
+
+    // Expected;
+    // Root ::= . Expr { $ }
+    //
+    // Expr ::= . Equality
+    // Expr ::= . Expr && Equality
+    // Expr ::= . Expr || Equality
+    //
+    // Equality ::= . Sum
+    // Equality ::= . Sum > Sum
+    // Equality ::= . Sum == Sum
+    // Equality ::= . Sum < Sum
+    //
+    // Sum ::= . Product
+    // Sum ::= . Sum + Product
+    // Sum ::= . Sum - Product
+    //
+    // Product ::= . Unary
+    // Product ::= . Product * Unary
+    // Product ::= . Product / Unary
+    //
+    // Unary ::= . Term
+    // Unary ::= . ! Term
+    // Unary ::= . - Term
+    //
+    // Term ::= . INT
+    // Term ::= . IDENT
+    // Term ::= . ( Expr )
+
+    // Follow(Root) =       { $ }
+    // Follow(Expr) =       { $ && || }
+    // Follow(Equality) =   { $ && || > == < }
+    // Follow(Sum) =        { $ && || * / > == < + - }
+    // Follow(Product) =    { $ && || > == < + - * / }
+    // Follow(Unary) =      { $ && || > == < + - * / }
+    // Follow(Term) =       { $ && || > == < + - * / }
 
     return 0;
 }
