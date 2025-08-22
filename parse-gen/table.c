@@ -109,6 +109,30 @@ int __alloc_lritems(struct glcpg_lritem **ptr, size_t capacity)
     return 0;
 }
 
+int __alloc_states(struct glcpg_lrstate **ptr, size_t capacity)
+{
+    struct glcpg_lrstate *newptr;
+    if (ptr == NULL) { return E_GLCPG_INVALIDINPUT; }
+
+    if (capacity == 0)
+    {
+        free(*ptr);
+        *ptr = NULL;
+        return 0;
+    }
+
+    newptr = realloc(*ptr, sizeof(struct glcpg_lrstate) * capacity);
+    if (newptr == NULL)
+    {
+        free(*ptr);
+        *ptr = NULL;
+        return E_GLCPG_MEMORYERROR;
+    }
+
+    *ptr = newptr;
+    return 0;
+}
+
 int __compare_parseitem(
   struct glcpg_parseitem_0 *lhs,
   struct glcpg_parseitem_0 *rhs,
@@ -166,8 +190,11 @@ void __debug_lritem(struct glcpg_lritem *item, struct glcpg_grammar *grammar)
     for (size_t i = 0; i < item->rule.num_items; i++)
     {
         ptrdiff_t idx = item->rule.item[i];
+        if (item->parse_idx == i) { printf(" ."); }
         printf(" %s", grammar->items[idx].value);
     }
+
+    if (item->parse_idx == item->rule.num_items) { printf(" ."); }
 
     printf(" {");
     for (size_t i = 0; i < item->num_follow; i++) { printf(" %s", item->follow[i].value); }
@@ -382,14 +409,16 @@ int __compute_first_set(struct glcpg_firstset **result, struct glcpg_grammar *gr
 
 ptrdiff_t __close_lritemset(
   struct glcpg_lritem  **state_k,
-  size_t                 size,
+  size_t                *size,
   struct glcpg_grammar  *grammar,
   struct glcpg_firstset *firstset)
 {
     int    ret;
-    size_t capacity = size;
+    size_t capacity = *size;
 
-    if (state_k == NULL || *state_k == NULL || size == 0 || grammar == NULL || firstset == NULL)
+    if (
+      state_k == NULL || *state_k == NULL || size == NULL || *size == 0 || grammar == NULL ||
+      firstset == NULL)
     {
         return E_GLCPG_INVALIDINPUT;
     }
@@ -402,10 +431,12 @@ ptrdiff_t __close_lritemset(
     while (updated)
     {
         updated                 = 0;
-        size_t prev_state0_size = size;
+        size_t prev_state0_size = *size;
         for (size_t processed = 0; processed < prev_state0_size; processed++)
         {
             struct glcpg_lritem *state = *state_k + processed;
+
+            if (state->parse_idx == state->rule.num_items) { continue; }
 
             ptrdiff_t          idx  = state->rule.item[state->parse_idx];
             struct glcpg_item *next = grammar->items + idx;
@@ -442,7 +473,7 @@ ptrdiff_t __close_lritemset(
 
                 // Search current processed list for definitions of next
                 struct glcpg_lritem *existing = NULL;
-                for (size_t j = 0; j < size; j++)
+                for (size_t j = 0; j < *size; j++)
                 {
                     struct glcpg_lritem *lookup = *state_k + j;
                     if (__compare_parseitem(
@@ -510,7 +541,7 @@ ptrdiff_t __close_lritemset(
                 if (existing == NULL)
                 {
                     // Rule not added; Push to state
-                    if (capacity == size)
+                    if (capacity == *size)
                     {
                         capacity *= 2;
                         ret = __alloc_lritems(state_k, capacity);
@@ -529,14 +560,23 @@ ptrdiff_t __close_lritemset(
                     item.follow     = calloc(num_follows, sizeof(struct glcpg_item));
                     memcpy(item.follow, follows, num_follows * sizeof(struct glcpg_item));
 
-                    (*state_k)[size++] = item;
-                    updated            = 1;
+                    (*state_k)[(*size)++] = item;
+                    updated               = 1;
                     continue;
                 }
+
+                struct glcpg_item *prev_follow;
+                if (follows == state->follow) { prev_follow = state->follow; }
+                else { prev_follow = NULL; }
 
                 // Rule exists; Append follows onto existing rule state
                 ret = __alloc_items2(&existing->follow, existing->num_follow + num_follows);
                 if (ret < 0) { return ret; }
+
+                if (prev_follow != NULL && state->follow != prev_follow)
+                {
+                    follows = state->follow;
+                }
 
                 for (size_t j = 0; j < num_follows; j++)
                 {
@@ -569,10 +609,24 @@ ptrdiff_t __close_lritemset(
     }
 
     // Shrink to fit
-    ret = __alloc_lritems(state_k, size);
+    ret = __alloc_lritems(state_k, *size);
     if (ret < 0) { return ret; }
 
-    return size;
+    return 0;
+}
+
+void __clone_lritem(struct glcpg_lritem *dst, struct glcpg_lritem *src)
+{
+    if (src == NULL || dst == NULL) { return; }
+
+    dst->key        = src->key;
+    dst->num_follow = src->num_follow;
+
+    dst->follow = calloc(src->num_follow, sizeof(struct glcpg_item));
+    memcpy(dst->follow, src->follow, src->num_follow * sizeof(struct glcpg_item));
+
+    dst->parse_idx = src->parse_idx;
+    dst->rule      = src->rule;
 }
 
 ptrdiff_t glcpg_table_create(
@@ -617,66 +671,199 @@ ptrdiff_t glcpg_table_create(
 
     for (size_t i = 0; i < ret; i++) { __debug_firstset(firstset + i); }
 
+    size_t                num_states     = 0;
+    size_t                state_capacity = 8;
+    struct glcpg_lrstate *states         = NULL;
+    ret                                  = __alloc_states(&states, state_capacity);
+    if (ret < 0) { return ret; }
+
     // Build state 0
-    struct glcpg_lritem *state0 = NULL;
-    ret                         = __alloc_lritems(&state0, 1);
+    {
+        struct glcpg_lrstate *state0 = states + num_states++;
+        state0->itemset              = NULL;
+        state0->num_items            = 1;
+        ret                          = __alloc_lritems(&state0->itemset, 1);
+        if (ret < 0) { return ret; }
+
+        state0->itemset[0].key  = "";
+        state0->itemset[0].rule = (struct glcpg_rule) {
+            .num_items = 1,
+            .item      = &root_idx,
+        };
+
+        state0->itemset[0].parse_idx  = 0;
+        state0->itemset[0].num_follow = 1;
+        state0->itemset[0].follow     = NULL;
+        ret                           = __alloc_items2(&state0->itemset[0].follow, 1);
+        if (ret < 0) { return ret; }
+
+        state0->itemset[0].follow[0].type  = E_PGITM_EOF;
+        state0->itemset[0].follow[0].value = NULL;
+
+        state0->gotos = calloc(grammar->num_items, sizeof(ptrdiff_t));
+    }
+
+    // Intentionally using num_states changing per iteration to our advantage
+    int updated = 1;
+    while (updated)
+    {
+        updated = 0;
+
+        size_t prev_num_states = num_states;
+        for (size_t processed = 0; processed < prev_num_states; processed++)
+        {
+            struct glcpg_lrstate *state = states + processed;
+
+            ret = __close_lritemset(&state->itemset, &state->num_items, grammar, firstset);
+            if (ret < 0) { return ret; }
+
+            // Allocate space for possible states
+            if ((ptrdiff_t) (state_capacity - num_states) < grammar->num_items)
+            {
+                state_capacity *= 2;
+                ret = __alloc_states(&states, state_capacity);
+                if (ret < 0) { return ret; }
+
+                state = states + processed;
+            }
+
+            // For each item...
+            for (size_t i = 0; i < state->num_items; i++)
+            {
+                struct glcpg_lritem *item = state->itemset + i;
+                if (item->parse_idx >= item->rule.num_items) { continue; }
+
+                ptrdiff_t         next_idx = item->rule.item[item->parse_idx];
+                struct glcpg_item next     = grammar->items[next_idx];
+                if (next.type == E_PGITM_EOF) { continue; }
+
+                // printf("next %d: %s\n", i, next.value);
+
+                // Find state [A → α • B β, a]
+                size_t j;
+                for (j = 0; j < num_states; j++)
+                {
+                    struct glcpg_lrstate *search = states + j;
+
+                    size_t k;
+                    for (k = 0; k < search->num_items; k++)
+                    {
+                        struct glcpg_lritem *search_item = search->itemset + k;
+                        if (search_item->parse_idx < 1) { continue; }
+
+                        size_t search_next_idx = search_item->rule.item[search_item->parse_idx - 1];
+                        struct glcpg_item search_next = grammar->items[search_next_idx];
+
+                        if (
+                          search_next.type == next.type &&
+                          strcmp(search_next.value, next.value) == 0)
+                        {
+                            break;
+                        }
+                    }
+
+                    if (k < search->num_items) { break; }
+                }
+
+                if (j < num_states)
+                {
+                    // State already exists
+                    state->gotos[next_idx] = j - processed;
+
+                    // Make sure exact current state (+ 1) exists in target state
+                    struct glcpg_parseitem_0 cmp_item = {
+                        .parse_idx = item->parse_idx + 1,
+                        .result    = item->key,
+                        .rule      = item->rule,
+                    };
+
+                    struct glcpg_lrstate *search = states + j;
+                    size_t                k;
+                    for (k = 0; k < search->num_items; k++)
+                    {
+                        struct glcpg_lritem *search_item = search->itemset + k;
+
+                        if (__compare_parseitem(
+                              &(struct glcpg_parseitem_0) {
+                                .parse_idx = search_item->parse_idx,
+                                .result    = search_item->key,
+                                .rule      = search_item->rule,
+                              },
+                              &cmp_item,
+                              grammar))
+                        {
+                            break;
+                        }
+                    }
+
+                    if (k >= search->num_items)
+                    {
+                        // Item doesn't exist; push to state
+                        ret = __alloc_lritems(&search->itemset, search->num_items + 1);
+                        if (ret < 0) { return ret; }
+
+                        struct glcpg_lritem *next_item = search->itemset + search->num_items++;
+                        __clone_lritem(next_item, item);
+                        next_item->parse_idx++;
+                        // printf("%lu %lu", j, search->num_items);
+                        //__debug_lritem(next_item, grammar);
+
+                        updated = 1;
+                    }
+
+                    continue;
+                }
+
+                // Add new state & close
+                struct glcpg_lrstate next_state;
+                next_state.gotos = calloc(grammar->num_items, sizeof(ptrdiff_t));
+
+                next_state.itemset   = NULL;
+                next_state.num_items = 1;
+                ret                  = __alloc_lritems(&next_state.itemset, 1);
+                if (ret < 0) { return ret; }
+
+                __clone_lritem(next_state.itemset + 0, item);
+                next_state.itemset[0].parse_idx++;
+                //__debug_lritem(next_state.itemset, grammar);
+
+                ret =
+                  __close_lritemset(&next_state.itemset, &next_state.num_items, grammar, firstset);
+                if (ret < 0) { return ret; }
+
+                state->gotos[next_idx] = num_states - processed;
+                states[num_states++]   = next_state;
+                updated                = 1;
+            }
+        }
+    }
+
+    ret = __alloc_states(&states, num_states);
     if (ret < 0) { return ret; }
 
-    state0[0].key  = "";
-    state0[0].rule = (struct glcpg_rule) {
-        .num_items = 1,
-        .item      = &root_idx,
-    };
+    for (size_t i = 0; i < num_states; i++)
+    {
+        struct glcpg_lrstate *state = states + i;
 
-    state0[0].parse_idx  = 0;
-    state0[0].num_follow = 1;
-    state0[0].follow     = NULL;
-    ret                  = __alloc_items2(&state0[0].follow, 1);
-    if (ret < 0) { return ret; }
+        // Debug states
+        glc_log(E_DEBUG, "\n");
+        glc_log(E_DEBUG, "State %lu %lu;\n", i, state->num_items);
+        for (size_t i = 0; i < state->num_items; i++)
+        {
+            __debug_lritem(state->itemset + i, grammar);
+        }
 
-    state0[0].follow[0].type = E_PGITM_EOF;
+        glc_log(E_DEBUG, "Goto;");
+        for (size_t i = 0; i < grammar->num_items; i++)
+        {
+            // Goto
+            printf(", '%s': %ld", grammar->items[i].value, state->gotos[i]);
+        }
+        printf("\n");
+    }
 
-    ret = __close_lritemset(&state0, 1, grammar, firstset);
-    if (ret < 0) { return ret; }
-    size_t state0_size = ret;
-
-    for (size_t i = 0; i < state0_size; i++) { __debug_lritem(state0 + i, grammar); }
-
-    // Expected;
-    // Root ::= . Expr { $ }
-    //
-    // Expr ::= . Equality
-    // Expr ::= . Expr && Equality
-    // Expr ::= . Expr || Equality
-    //
-    // Equality ::= . Sum
-    // Equality ::= . Sum > Sum
-    // Equality ::= . Sum == Sum
-    // Equality ::= . Sum < Sum
-    //
-    // Sum ::= . Product
-    // Sum ::= . Sum + Product
-    // Sum ::= . Sum - Product
-    //
-    // Product ::= . Unary
-    // Product ::= . Product * Unary
-    // Product ::= . Product / Unary
-    //
-    // Unary ::= . Term
-    // Unary ::= . ! Term
-    // Unary ::= . - Term
-    //
-    // Term ::= . INT
-    // Term ::= . IDENT
-    // Term ::= . ( Expr )
-
-    // Follow(Root) =       { $ }
-    // Follow(Expr) =       { $ && || }
-    // Follow(Equality) =   { $ && || > == < }
-    // Follow(Sum) =        { $ && || * / > == < + - }
-    // Follow(Product) =    { $ && || > == < + - * / }
-    // Follow(Unary) =      { $ && || > == < + - * / }
-    // Follow(Term) =       { $ && || > == < + - * / }
+    // TODO: Free FirstSet
+    // TODO: Free States
 
     return 0;
 }

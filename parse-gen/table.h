@@ -36,6 +36,15 @@ struct glcpg_firstset
     size_t             count;
 };
 
+struct glcpg_lrstate
+{
+    struct glcpg_lritem *itemset;
+    size_t               num_items;
+
+    // For all items in grammar;
+    ptrdiff_t *gotos;    // Offset from self to get to next_state
+};
+
 struct glcpg_table
 {
     struct glcpg_itemset_0 *sets;
