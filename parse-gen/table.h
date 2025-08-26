@@ -45,6 +45,21 @@ struct glcpg_lrstate
     ptrdiff_t *gotos;    // Offset from self to get to next_state
 };
 
+struct glcpg_actiontable_entry
+{
+    enum
+    {
+        E_PGACT_INVALID = 0,
+
+        E_PGACT_SHIFT,
+        E_PGACT_REDUCE,
+        E_PGACT_ACCEPT,
+        E_PGACT_GOTO,
+    } action;
+
+    size_t next_state;
+};
+
 struct glcpg_table
 {
     struct glcpg_itemset_0 *sets;
@@ -54,6 +69,6 @@ struct glcpg_table
 };
 
 ptrdiff_t glcpg_table_create(
-  struct glcpg_table   *result,
-  const char           *root_node,
-  struct glcpg_grammar *grammar);
+  struct glcpg_actiontable_entry **result,
+  const char                      *root_node,
+  struct glcpg_grammar            *grammar);

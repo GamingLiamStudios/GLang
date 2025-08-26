@@ -285,7 +285,7 @@ int main(const int argc, char *const *argv)
     //       grammar.nonterminals[i].num_rules);
     // }
 
-    struct glcpg_table table;
+    struct glcpg_actiontable_entry *table = NULL;
     ret = glcpg_table_create(&table, "Expr", &grammar);
     if (ret < 0)
     {
@@ -293,6 +293,8 @@ int main(const int argc, char *const *argv)
         free(opts.input_paths);
         return ret;
     }
+
+    free(table);
 
     ret = 0;
     glcpg_grammar_free(&grammar);

@@ -630,9 +630,9 @@ void __clone_lritem(struct glcpg_lritem *dst, struct glcpg_lritem *src)
 }
 
 ptrdiff_t glcpg_table_create(
-  struct glcpg_table   *result,
-  const char           *root_node,
-  struct glcpg_grammar *grammar)
+  struct glcpg_actiontable_entry **result,
+  const char                      *root_node,
+  struct glcpg_grammar            *grammar)
 {
     int ret;
 
@@ -669,7 +669,7 @@ ptrdiff_t glcpg_table_create(
     ret                             = __compute_first_set(&firstset, grammar);
     if (ret < 0) { return ret; }
 
-    for (size_t i = 0; i < ret; i++) { __debug_firstset(firstset + i); }
+    //for (size_t i = 0; i < ret; i++) { __debug_firstset(firstset + i); }
 
     size_t                num_states     = 0;
     size_t                state_capacity = 8;
@@ -703,7 +703,7 @@ ptrdiff_t glcpg_table_create(
         state0->gotos = calloc(grammar->num_items, sizeof(ptrdiff_t));
     }
 
-    // Intentionally using num_states changing per iteration to our advantage
+    // Build rest of states
     int updated = 1;
     while (updated)
     {
@@ -841,29 +841,86 @@ ptrdiff_t glcpg_table_create(
     ret = __alloc_states(&states, num_states);
     if (ret < 0) { return ret; }
 
+    //for (size_t i = 0; i < num_states; i++)
+    //{
+    //    struct glcpg_lrstate *state = states + i;
+    //
+    //    // Debug states
+    //    glc_log(E_DEBUG, "\n");
+    //    glc_log(E_DEBUG, "State %lu %lu;\n", i, state->num_items);
+    //    for (size_t i = 0; i < state->num_items; i++)
+    //    {
+    //        __debug_lritem(state->itemset + i, grammar);
+    //    }
+    //
+    //    glc_log(E_DEBUG, "Goto;");
+    //    for (size_t i = 0; i < grammar->num_items; i++)
+    //    {
+    //        // Goto
+    //        printf(", '%s': %ld", grammar->items[i].value, state->gotos[i]);
+    //    }
+    //    printf("\n");
+    //}
+
+    // Build action table
+    struct glcpg_actiontable_entry *action_table;
+    action_table =
+      calloc(num_states * (grammar->num_items + 1), sizeof(struct glcpg_actiontable_entry));
+
+    // Shift to m; [A -> a . B b, a]
+    // Reduce A -> a; [A -> a ., a]
+
+    for (size_t i = 0; i < num_states; i++)
+    {
+        struct glcpg_actiontable_entry *tables = action_table + i * (grammar->num_items + 1);
+        struct glcpg_lrstate           *state  = states + i;
+
+        for (size_t j = 0; j < grammar->num_items; j++)
+        {
+            struct glcpg_item *grammar_item = grammar->items + j;
+            ptrdiff_t          goto_offs    = state->gotos[j];
+
+            if (goto_offs == 0)
+            {
+                tables[j].action =
+                  grammar_item->type == E_PGITM_EOF ? E_PGACT_ACCEPT : E_PGACT_INVALID;
+                break;
+            }
+
+            tables[j].next_state = i + goto_offs;
+            switch (grammar_item->type)
+            {
+            case E_PGITM_EOF: tables[j].action = E_PGACT_REDUCE; break;
+            case E_PGITM_NONTERMINAL: tables[j].action = E_PGACT_GOTO; break;
+            case E_PGITM_TERMINAL: tables[j].action = E_PGACT_SHIFT; break;
+            }
+        }
+    }
+
+    // Free FirstSet
+    for (size_t i = 0; i < grammar->num_nonterminals; i++)
+    {
+        struct glcpg_firstset *itm = firstset + i;
+        free(itm->first);
+    }
+    free(firstset);
+
+    // Free States
     for (size_t i = 0; i < num_states; i++)
     {
         struct glcpg_lrstate *state = states + i;
 
-        // Debug states
-        glc_log(E_DEBUG, "\n");
-        glc_log(E_DEBUG, "State %lu %lu;\n", i, state->num_items);
-        for (size_t i = 0; i < state->num_items; i++)
+        for(size_t j = 0; j < state->num_items; j++)
         {
-            __debug_lritem(state->itemset + i, grammar);
+            struct glcpg_lritem *itm = state->itemset + j;
+            free(itm->follow);
         }
 
-        glc_log(E_DEBUG, "Goto;");
-        for (size_t i = 0; i < grammar->num_items; i++)
-        {
-            // Goto
-            printf(", '%s': %ld", grammar->items[i].value, state->gotos[i]);
-        }
-        printf("\n");
+        free(state->itemset);
+        free(state->gotos);
     }
+    free(states);
 
-    // TODO: Free FirstSet
-    // TODO: Free States
-
-    return 0;
+    *result = action_table;
+    return num_states;
 }
