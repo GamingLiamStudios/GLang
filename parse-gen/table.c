@@ -880,6 +880,8 @@ ptrdiff_t glcpg_table_create(
             struct glcpg_item *grammar_item = grammar->items + j;
             ptrdiff_t          goto_offs    = state->gotos[j];
 
+            if (tables[j].action != E_PGACT_INVALID) { glc_log(E_ERROR, "Parsing Conflict!\n"); return -1; }
+
             if (goto_offs == 0)
             {
                 tables[j].action =

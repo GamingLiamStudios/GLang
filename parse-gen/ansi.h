@@ -1,5 +1,10 @@
 #pragma once
 
+#if defined(__cplusplus)
+extern "C"
+{
+#endif
+
 #define ANSI_FMT_BEGIN "\x1b[0"
 #define ANSI_FMT_END   "m"
 #define ANSI_FMT_RESET "\x1b[0m"
@@ -22,3 +27,7 @@
 #define ANSI_FMT_COLOR_WHITE   "7"
 
 #define ANSI_FMT_COLOR_RGB24(r, g, b) "8;2;" #r ";" #g ";" #b
+
+#if defined(__cplusplus)
+}
+#endif

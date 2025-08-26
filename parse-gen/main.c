@@ -57,6 +57,36 @@ int __alloc_input_paths(const char ***paths, size_t capacity)
     return 0;
 }
 
+struct glcpg_parseitem
+{
+    size_t             state_id;
+    struct glcpg_token lookahead;
+};
+
+int __alloc_parse_items(struct glcpg_parseitem **items, size_t capacity)
+{
+    struct glcpg_parseitem *newptr;
+    if (items == NULL) { return E_GLCPG_INVALIDINPUT; }
+
+    if (capacity == 0)
+    {
+        free(*items);
+        *items = NULL;
+        return 0;
+    }
+
+    newptr = realloc(*items, sizeof(const char **) * capacity);
+    if (newptr == NULL)
+    {
+        free(*items);
+        *items = NULL;
+        return E_GLCPG_MEMORYERROR;
+    }
+
+    *items = newptr;
+    return 0;
+}
+
 int main(const int argc, char *const *argv)
 {
     // Quick and dirty CLI
@@ -286,12 +316,85 @@ int main(const int argc, char *const *argv)
     // }
 
     struct glcpg_actiontable_entry *table = NULL;
-    ret = glcpg_table_create(&table, "Expr", &grammar);
+    ret                                   = glcpg_table_create(&table, "Expr", &grammar);
     if (ret < 0)
     {
         glcpg_grammar_free(&grammar);
         free(opts.input_paths);
         return ret;
+    }
+
+    // Parse string
+    const char *parse_string = "1 + 2 * (3 + 4)";
+
+    struct glcpg_token *parse_stream = NULL;
+    ret                              = glcpg_lexer_string(&parse_stream, parse_string);
+    if (ret < 0) { return ret; }
+
+    size_t                  capacity = 8;
+    size_t                  size     = 0;
+    struct glcpg_parseitem *stack;
+    ret = __alloc_parse_items(&stack, capacity);
+    if (ret < 0) { return ret; }
+
+    stack[0].state_id  = 0;
+    stack[0].lookahead = *(parse_stream++);
+
+    while (1)
+    {
+        if (size == capacity)
+        {
+            capacity *= 2;
+            ret = __alloc_parse_items(&stack, capacity);
+            if (ret < 0) { return ret; }
+        }
+
+        struct glcpg_parseitem *front = stack + size;
+
+        struct glcpg_actiontable_entry *actions = table + front->state_id * grammar.num_items;
+
+        size_t i;
+        for (i = 0; i < grammar.num_items; i++)
+        {
+            struct glcpg_item itm = grammar.items[i];
+            printf("%s\n", itm.value);
+            if (
+              front->lookahead.type != E_PGITM_EOF &&
+              strcmp(front->lookahead.value.ident, itm.value) == 0)
+            {
+                break;
+            }
+        }
+        if (i >= grammar.num_items)
+        {
+            char tok_dbg[1024];
+            glcpg_token_debug(tok_dbg, 1024, front->lookahead);
+            glc_log(E_ERROR, "Token doesn't exist in grammar! %s\n", tok_dbg);
+            return -1;
+        }
+
+        switch (actions[i].action)
+        {
+            case E_PGACT_INVALID:
+                glc_log(E_ERROR, "Invalid State Transition!\n");
+                return -1;
+            case E_PGACT_ACCEPT:
+                break;
+            case E_PGACT_REDUCE:
+                glc_log(E_DEBUG, "Reduce!\n");
+                return -1;
+                // TODO: Grammar reduction (AST Generation)
+
+            case E_PGACT_GOTO:
+                front->state_id = actions[i].next_state;
+                break;
+
+            case E_PGACT_SHIFT:
+                size++;
+                stack[size].state_id = actions[i].next_state;
+                stack[size].lookahead = *(parse_stream++);
+                break;
+        }
     }
 
     free(table);

@@ -58,7 +58,7 @@ void glcpg_token_free(struct glcpg_token *token)
     }
 }
 
-ptrdiff_t glcpg_lexer_file(struct glcpg_token *restrict *result, FILE *restrict file)
+ptrdiff_t glcpg_lexer_file(struct glcpg_token **result, FILE *file)
 {
     // TODO: Heap Allocate instead of Stack
     char                cur, current_string[1024];
@@ -122,6 +122,78 @@ ptrdiff_t glcpg_lexer_file(struct glcpg_token *restrict *result, FILE *restrict 
             }
         }
         else { current_string[cur_len++] = cur; }
+    }
+
+    // shrink to fit
+    stream[num_elems++].type = E_PGTOK_EOF;
+    ret                      = __alloc_token_stream(&stream, num_elems);
+    if (ret < 0)
+    {
+        for (size_t i = 0; i < num_elems; i++) glcpg_token_free(stream + i);
+        free(stream);
+        return ret;
+    }
+
+    *result = stream;
+    return num_elems;
+}
+
+ptrdiff_t glcpg_lexer_string(struct glcpg_token **result, const char *cursor)
+{
+    char                cur;
+    const char         *current_string;
+    struct glcpg_token *stream = NULL;
+    size_t              capacity, num_elems, cur_len;
+    int                 ret;
+
+    if (result == NULL) { return E_GLCPG_INVALIDINPUT; }
+
+    num_elems = 0;
+    capacity  = TOKENSTREAM_INITCAPACITY;
+    ret       = __alloc_token_stream(&stream, TOKENSTREAM_INITCAPACITY);
+    if (ret < 0) { return ret; }
+
+    cur_len = 0;
+    while (1)
+    {
+        cur = *(cursor++);
+        if (capacity - 1 == num_elems)
+        {
+            capacity *= TOKENSTREAM_GROWTHFACTOR;
+            ret = __alloc_token_stream(&stream, capacity);
+            if (ret < 0)
+            {
+                for (size_t i = 0; i < num_elems; i++) glcpg_token_free(stream + i);
+                free(stream);
+                return ret;
+            }
+        }
+
+        if (isspace(cur) || cur == '\0' || cur == '\n')
+        {
+            if (3 == cur_len && strncmp(current_string, "::=", 3) == 0)
+            {
+                stream[num_elems].type = E_PGTOK_EQUAL;
+                num_elems += 1;
+                cur_len = 0;
+            }
+            else
+            {
+                if (cur_len > 0)
+                {
+                    stream[num_elems].type        = E_PGTOK_IDENT;
+                    stream[num_elems].value.ident = calloc(cur_len + 1, sizeof(char));
+                    strncpy((char *) stream[num_elems].value.ident, current_string, cur_len);
+
+                    num_elems += 1;
+                    cur_len = 0;
+                }
+
+                if (cur == '\n') { stream[num_elems++].type = E_PGTOK_EOL; }
+                if (cur == '\0') { break; }
+            }
+        }
+        else if (cur_len++ == 0) { current_string = cursor - 1; }
     }
 
     // shrink to fit
