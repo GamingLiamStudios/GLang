@@ -20,5 +20,4 @@ Unary ::= ! Term
 Unary ::= - Term
 
 Term ::= INT
-Term ::= IDENT
 Term ::= ( Expr )

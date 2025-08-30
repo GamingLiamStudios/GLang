@@ -40,20 +40,20 @@ cc_binary(
 )
 
 cc_test(
-    name = "libpg_test",
+    name = "libpg_test_expr",
     size = "small",
     srcs = [
-        "tests/main.cc",
+        "expr_test/lexer.c",
+        "expr_test/main.c",
+        "expr_test/token.h",
     ],
     copts = [
-        "-std=c++17",
+        "-std=c11",
     ],
     data = [
-        "tests/expr.pg",
+        "expr_test/expr.pg",
     ],
     deps = [
         ":libpg",
-        "@googletest//:gtest",
-        "@googletest//:gtest_main",
     ],
 )
