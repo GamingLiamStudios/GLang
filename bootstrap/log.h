@@ -8,4 +8,6 @@ enum LogLevel
     E_DEBUG,
 };
 
+extern enum LogLevel verbosity;
+
 void glc_log(enum LogLevel level, const char *format, ...);

@@ -5,72 +5,24 @@
 #include <errno.h>
 
 #include "log.h"
-#include "ansi.h"
-#include "token.h"
-#include "tree.h"
+#include "bootstrap/parser.h"
+#include "bootstrap/lexer.h"
+
+#include <llvm-c/Core.h>
+#include <llvm-c/Target.h>
+#include <llvm-c/ExecutionEngine.h>
+#include <llvm-c/Analysis.h>
 
 struct Options
 {
     const char *input_paths;
     const char *output_path;
-    int         verbosity;
 };
 
 struct Options opts = {
-    .verbosity   = E_INFO,
     .output_path = NULL,
     .input_paths = NULL,
 };
-
-void glc_log(enum LogLevel level, const char *restrict format, ...)
-{
-    if (level > opts.verbosity) return;
-
-    va_list args;
-    va_start(args, format);
-
-    switch (level)
-    {
-    case E_DEBUG:
-    {
-        fprintf(
-          stdout,
-          ANSI_FMT_BEGIN ANSI_FMT_COLOR_FG ANSI_FMT_COLOR_MAGENTA ANSI_FMT_END
-          "[DEBUG] " ANSI_FMT_RESET);
-        break;
-    }
-    case E_INFO:
-    {
-        fprintf(
-          stdout,
-          ANSI_FMT_BEGIN ANSI_FMT_COLOR_FG ANSI_FMT_COLOR_GREEN ANSI_FMT_END
-          "[INFO] " ANSI_FMT_RESET);
-        break;
-    }
-    case E_WARN:
-    {
-        fprintf(
-          stdout,
-          ANSI_FMT_BEGIN ANSI_FMT_COLOR_FG ANSI_FMT_COLOR_YELLOW ANSI_FMT_END
-          "[WARN] " ANSI_FMT_RESET);
-        break;
-    }
-    case E_ERROR:
-    {
-        fprintf(
-          stderr,
-          ANSI_FMT_BEGIN ANSI_FMT_COLOR_FG ANSI_FMT_COLOR_RED ANSI_FMT_END
-          "[ERROR] " ANSI_FMT_RESET);
-        vfprintf(stderr, format, args);
-        va_end(args);
-        return;
-    }
-    }
-
-    vfprintf(stdout, format, args);
-
-    va_end(args);
-}
 
 void help()
 {
@@ -80,6 +32,7 @@ void help()
 int main(const int argc, const char *const *argv)
 {
     // Quick and dirty CLI
+    verbosity = E_INFO;
 
     if (argc == 1)
     {
@@ -117,7 +70,7 @@ int main(const int argc, const char *const *argv)
                 {
                 case 'v':
                 {
-                    opts.verbosity++;
+                    verbosity++;
                     continue;
                 }
                 case 'o':
@@ -213,7 +166,7 @@ int main(const int argc, const char *const *argv)
         return -1;
     }
 
-    glc_log(E_DEBUG, "Verbosity: %d\n", opts.verbosity);
+    glc_log(E_DEBUG, "Verbosity: %d\n", verbosity);
     glc_log(E_DEBUG, "Output Path: %s\n", opts.output_path);
     glc_log(E_DEBUG, "Input Path: %s\n", opts.input_paths);
 
@@ -235,30 +188,85 @@ int main(const int argc, const char *const *argv)
         return errno;
     }
 
-    struct glcpg_token *stream;
-    ptrdiff_t           result = tokenize_file(&stream, input_file);
-    switch (result)
-    {
-    case E_TOK_MEMORYERROR:
-    case E_TOK_IOERROR:
-    case E_TOK_INVALIDINPUT: fclose(input_file); return -1;
-    }
+    yyscan_t scanner;
+    if (yylex_init(&scanner)) return -1;
+    yyset_in(input_file, scanner);
 
-    glc_log(E_DEBUG, "%lu Tokens\n", result);
+    // yydebug = 1;
+    // yyset_debug(1, scanner);
 
-    // Next step; Parsing
-    result = glc_parse(stream);
-    if (result < 0)
-    {
-        glc_log(E_ERROR, "Fatal Error! Exiting early...\n");
+    struct glc_ast_root root = {
+        .decls     = NULL,
+        .num_decls = 0,
+    };
 
-        token_stream_free(&stream);
-        fclose(input_file);
-        return -1;
-    }
+    int result = yyparse(&root, scanner);
+    if (result) { glc_log(E_ERROR, "ruhoh\n"); }
 
-    glc_log(E_DEBUG, "Parsed!\n");
-
-    token_stream_free(&stream);
+    yylex_destroy(scanner);
     fclose(input_file);
+
+    glc_log(E_DEBUG, "num decls %lu\n", root.num_decls);
+    for (size_t i = 0; i < root.num_decls; i++)
+    {
+        struct glc_ast_statement *decl = root.decls + i;
+
+        // TODO: Display expr tree
+        switch (decl->type)
+        {
+        case E_AST_STMT_VARIABLE:
+            glc_log(E_DEBUG, "%s (%s)\n", decl->v_variable.ident, decl->v_variable.type.ident);
+            break;
+        case E_AST_STMT_FUNCTION:
+            glc_log(E_DEBUG, "%s (%lu: ", decl->v_func.ident, decl->v_func.num_args);
+            for (int i = 0; i < decl->v_func.num_args; i++)
+            {
+                fprintf(stdout, "%s,", decl->v_func.args[i].ident);
+            }
+            fprintf(stdout, ") -> %s\n", decl->v_func.type.ident);
+            break;
+        }
+    }
+
+    LLVMContextRef ctx     = LLVMContextCreate();
+    LLVMBuilderRef builder = LLVMCreateBuilderInContext(ctx);
+    LLVMModuleRef  module  = LLVMModuleCreateWithNameInContext("the_bees", ctx);
+
+    LLVMTypeRef int32_type = LLVMIntTypeInContext(ctx, 32);
+
+    LLVMTypeRef params_type[2] = { int32_type, int32_type };
+
+    LLVMTypeRef  func_type = LLVMFunctionType(int32_type, params_type, 2, 0);
+    LLVMValueRef func      = LLVMAddFunction(module, "mul_add", func_type);
+    LLVMSetFunctionCallConv(func, LLVMFastCallConv);
+    // LLVMCCallConv - C ABI Compat
+    // LLVMFastCallConv - Speedy
+    // LLVMColdCallConv - Cold Functions
+    // LLVMTailCallConv - Speedy + Tail Call Optim guarentee
+
+    LLVMBasicBlockRef block = LLVMCreateBasicBlockInContext(ctx, "entry");
+    LLVMAppendExistingBasicBlock(func, block);
+    LLVMPositionBuilderAtEnd(builder, block);
+
+    LLVMValueRef param_a = LLVMGetParam(func, 0);
+    LLVMValueRef param_b = LLVMGetParam(func, 1);
+    LLVMValueRef sum     = LLVMBuildAdd(builder, param_a, param_b, "sum");
+    LLVMBuildRet(builder, sum);
+
+    char *error = NULL;
+    if (LLVMVerifyModule(module, LLVMAbortProcessAction, &error))
+    {
+        fprintf(stderr, "Error: %s\n", error);
+        LLVMDisposeMessage(error);
+        return 1;
+    }
+
+    LLVMPrintModuleToFile(module, "output.ll", &error);
+    printf("Generated IR:\n");
+    LLVMDumpModule(module);
+
+    // LLVMBuildMul(module, LLVMValueRef LHS, LLVMValueRef RHS, const char *Name)
+
+    LLVMDisposeBuilder(builder);
+    LLVMContextDispose(ctx);
 }

@@ -1,0 +1,24 @@
+// Global Constants (& just constants in general really)
+const ABC: u32 = 420;
+
+// Functions; implicitly constant when possible (unless marked otherwise)
+fn fibbonacci(x: u32) -> u32 {
+    if x < 3 {
+        1
+    } else {
+        fib(x - 1) + fib(x - 2)
+    }
+}
+
+struct TheKahoots {
+    /*
+    As with rust, needs explicit lifetime.
+    Borrows are only ever allowed to be implicit; Scoped, or in a function def
+    */
+    super_secret: &'static str,
+}
+
+enum Action {
+    Lights(u64),
+    Camera(TheKahoots),
+}

@@ -1,2 +1,2 @@
 const ABC: u32 = 256;
-const DEF: bool = 1 + 1 <= 2;
+const BCD: f32 = ABC + 43 * 2;

@@ -2,12 +2,10 @@
 #include "ansi.h"
 
 #include <stdio.h>
-#include <stddef.h>
 #include <stdarg.h>
 
-extern enum LogLevel verbosity;
+enum LogLevel verbosity;
 
-// TODO: Make this common between bootstrap and parse-gen
 void glc_log(enum LogLevel level, const char *restrict format, ...)
 {
     if (level > verbosity) return;
@@ -17,7 +15,6 @@ void glc_log(enum LogLevel level, const char *restrict format, ...)
 
     switch (level)
     {
-    default:
     case E_DEBUG:
     {
         fprintf(

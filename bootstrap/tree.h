@@ -1,79 +1,129 @@
 #pragma once
 
-#include <stddef.h>
-#include "token.h"
+#include <stdlib.h>
 
-enum ast_operation
+struct glc_number
 {
-    // Arithmatic
-    E_AST_OP_ADD,    // +
-    E_AST_OP_SUB,    // -
-    E_AST_OP_MUL,    // *
-    E_AST_OP_DIV,    // /
-
-    // Binary Bitwise
-    E_AST_OP_AND,    // & or && (Boolean)
-    E_AST_OP_OR,     // | or || (Boolean)
-    E_AST_OP_XOR,    // ^
-
-    // Comparisons
-    E_AST_OP_LT,     // <
-    E_AST_OP_LE,     // <=
-    E_AST_OP_EQ,     // ==
-    E_AST_OP_NEQ,    // !=
-    E_AST_OP_GE,     // >=
-    E_AST_OP_GT,     // >
-
-    // Unary
-    E_AST_OP_NEGATE,    // -
-    E_AST_OP_DEREF,     // *
-    E_AST_OP_BORROW,    // &
-    E_AST_OP_UNWRAP,    // ?
-
-    // Unary Bitwise
-    E_AST_OP_INVERT,    // ~ or ! (Boolean)
+    unsigned long integer;
+    unsigned long fractional;
 };
 
-enum ast_parse_error
+struct glc_ast_type
 {
-    E_AST_MEMORYERROR = -255,
-    E_AST_UNEXPECTED,
-    E_AST_INVALIDINPUT,
-    E_AST_DELIM,
-    E_AST_INVALIDSTATE,
+    const char *ident;
 };
 
-struct glc_parse_expr
+struct glc_ast_expr
 {
     enum
     {
-        E_GLC_EXPR_INTEGER,
-        E_GLC_EXPR_IDENT,
+        E_AST_EXPR_NUM,
+        E_AST_EXPR_VAR,
 
-        E_GLC_EXPR_ADD,
-        E_GLC_EXPR_SUB,
+        E_AST_EXPR_NOT,
+        E_AST_EXPR_NEG,
 
-        E_GLC_EXPR_MUL,
-        E_GLC_EXPR_DIV,
+        E_AST_EXPR_MUL,
+        E_AST_EXPR_DIV,
 
-        E_GLC_EXPR_NOT,
-        E_GLC_EXPR_NEG,
+        E_AST_EXPR_ADD,
+        E_AST_EXPR_SUB,
 
-        E_GLC_EXPR_GT,
-        E_GLC_EXPR_LT,
-        E_GLC_EXPR_EQ,
+        E_AST_EXPR_GT,
+        E_AST_EXPR_GE,
+        E_AST_EXPR_EQ,
+        E_AST_EXPR_LE,
+        E_AST_EXPR_LT,
 
-        E_GLC_EXPR_SCOPE
+        E_AST_EXPR_BOOLAND,
+        E_AST_EXPR_BOOLOR,
+
+        E_AST_EXPR_IF,        // 2 children
+        E_AST_EXPR_IFELSE,    // 3 children
     } type;
 
     union
     {
-        long  integer;
-        char *ident;
+        struct
+        {
+            struct glc_number    val;
+            struct glc_ast_type *type;
+        } v_num;
+        const char *v_var;
 
-        // Also used by scope
-        struct glc_parse_expr *children;
-    } value;
+        struct glc_ast_expr *v_children;
+    };
 };
 
-int glc_parse(struct glc_parse_expr *result, struct glcpg_token *stream);
+struct glc_ast_decl_argitem
+{
+    const char         *ident;
+    struct glc_ast_type type;
+};
+
+struct glc_ast_variable
+{
+    const char         *ident;
+    struct glc_ast_type type;
+
+    struct glc_ast_expr value;
+
+    enum : int
+    {
+        E_AST_VAR_CONST = 1 << 0,
+    } flags;
+};
+
+struct glc_ast_function
+{
+    const char *ident;
+    // TODO: Templating
+
+    enum : int
+    {
+        E_AST_FUNC_CONST  = 1 << 0,
+        E_AST_FUNC_EXTERN = 1 << 1,
+    } flags;
+
+    struct glc_ast_decl_argitem *args;
+    size_t                       num_args;
+
+    struct glc_ast_type type;
+
+    struct glc_ast_statement *body;
+};
+
+struct glc_ast_statement
+{
+    enum
+    {
+        E_AST_STMT_VARIABLE,
+        E_AST_STMT_FUNCTION,
+
+        E_AST_STMT_EXPR,
+        E_AST_STMT_BODY,
+        // E_AST_ROOT_STRUCT,
+        // E_AST_ROOT_ENUM,
+    } type;
+
+    union
+    {
+        struct glc_ast_variable v_variable;
+        struct glc_ast_function v_func;
+        struct glc_ast_expr     v_expr;
+
+        struct
+        {
+            struct glc_ast_statement *stmts;
+            size_t                    num_stmts;
+        } v_body;
+    };
+};
+
+struct glc_ast_root
+{
+    struct glc_ast_statement *decls;
+    size_t                    num_decls;
+};
+
+void glc_ast_root_push(struct glc_ast_root *root, struct glc_ast_statement new);
