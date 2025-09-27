@@ -10,7 +10,7 @@ Exactly as you would think; to generate the parser for the bootstrap compiler.
 
 ### Bootstrap
 
-A Minimal Implementation of the GLang Compiler, written in C. Should support the minimum amount of the language to compile the Self-Hosted Compiler.
+A Minimal Implementation of the GLang Compiler, written in Rust (cause C/C++ is annoying). Should support the minimum amount of the language to compile the Self-Hosted Compiler.
 
 ## Language Grammar
 

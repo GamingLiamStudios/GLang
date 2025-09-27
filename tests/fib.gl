@@ -1,5 +1,5 @@
 const ABC: u32 = 256;
 
 fn fib(x: u32) -> u32 {
-    x * 2 + 1
+    if 1 { 2 }
 }
